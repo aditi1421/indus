@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.cache/
+.env
+*.db
+*.db-*
+.DS_Store
+docs/
+gateway/gateway
+manifest.json
+.venv/

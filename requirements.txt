@@ -1,0 +1,12 @@
+openai-agents
+fastapi
+uvicorn
+requests
+pandas
+openpyxl
+pdfplumber
+browser-use-sdk
+boto3
+pytest
+httpx
+markitdown
