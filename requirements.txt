@@ -9,4 +9,24 @@ browser-use-sdk
 boto3
 pytest
 httpx
-markitdown
+markitdown[all]
+
+# aides runtime deps (packages/aides/pyproject.toml)
+orjson
+pyarrow
+swifter
+lxml
+html5lib
+brotli
+rapidfuzz
+PyMuPDF
+pypandoc
+tqdm
+
+# wraps runtime deps (packages/wraps/pyproject.toml)
+azure-storage-blob
+google-cloud-storage
+google-genai
+mistralai
+openai
+playwright
