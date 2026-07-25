@@ -1,3 +1,4 @@
+import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -50,6 +51,8 @@ ITEM_RE = re.compile(r"^\s{0,6}(\d{1,4})[\.\)]\s+\S")
 PDF_HREF_RE = re.compile(r'href="([^"]+\.pdf[^"]*)"', re.I)
 
 # MHC / eCourts HC service constants (Meghalaya's registration in the shared eCourts platform).
+# These constants (not COURTS["mhc"].index_url, which is reference/fixture-provenance only)
+# are the runtime source of truth used by _mhc_pdfs() below.
 _MHC_BASE = "https://hcservices.ecourts.gov.in/ecourtindiaHC/cases"
 _MHC_STATE_CD, _MHC_DIST_CD, _MHC_COURT_CODE = "21", "1", "1"
 _MHC_TOKEN_RE = re.compile(r"~([A-Za-z0-9%]+=*)~[YN]~\d+~\d+~")
@@ -149,7 +152,11 @@ def fetch(court: str, date: str) -> Path:
             if not pdf.is_file():
                 pdf.write_bytes(data)
             parts.append(pdf_to_text(pdf))
-        out.write_text("\n\n".join(parts), "utf-8")
+        text = "\n\n".join(parts)
+        if not text.strip():
+            raise ValueError(f"Cause-list PDFs for {c.name} on {date} contained no "
+                              f"extractable text (possibly scanned images).")
+        out.write_text(text, "utf-8")
         return out
 
     links = pdf_links(c, date)
@@ -158,7 +165,7 @@ def fetch(court: str, date: str) -> Path:
                          f"It may not be published yet, or the site layout changed.")
     parts = []
     for url in links:
-        pdf = CACHE / f"{court}_{date}_{abs(hash(url)) % 10**8}.pdf"
+        pdf = CACHE / f"{court}_{date}_{hashlib.md5(url.encode()).hexdigest()[:8]}.pdf"
         if not pdf.is_file():
             # DHC's combined "Sitting of Benches" cause list can run 15-20MB; government
             # hosts are slow and occasionally drop the connection mid-transfer, so give
@@ -176,7 +183,11 @@ def fetch(court: str, date: str) -> Path:
             if last_exc is not None:
                 raise last_exc
         parts.append(pdf_to_text(pdf))
-    out.write_text("\n\n".join(parts), "utf-8")
+    text = "\n\n".join(parts)
+    if not text.strip():
+        raise ValueError(f"Cause-list PDFs for {c.name} on {date} contained no "
+                          f"extractable text (possibly scanned images).")
+    out.write_text(text, "utf-8")
     return out
 
 
