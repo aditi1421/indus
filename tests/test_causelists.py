@@ -115,6 +115,40 @@ def test_fetch_refuses_to_cache_whitespace_only_extracted_text(tmp_path, monkeyp
     assert not (tmp_path / f"dhc_{date}.txt").exists()
 
 
+def test_fetch_falls_back_to_browser_use(tmp_path, monkeypatch):
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    monkeypatch.setattr(cl, "pdf_links", lambda c, d: [])
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: "1. W.P.(C) 1/2026 A Vs B")
+    p = cl.fetch("sc", "2026-07-24")
+    assert "W.P.(C) 1/2026" in p.read_text()
+
+
+def test_fetch_raises_when_fallback_also_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    monkeypatch.setattr(cl, "pdf_links", lambda c, d: [])
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: None)
+    with pytest.raises(ValueError):
+        cl.fetch("sc", "2026-07-24")
+
+
+def test_fetch_mhc_falls_back_to_browser_use(tmp_path, monkeypatch):
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    monkeypatch.setattr(cl, "_mhc_pdfs", lambda date: [])
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: "1. WP(C) 9/2026 X Vs Y")
+    p = cl.fetch("mhc", "2026-07-24")
+    assert "WP(C) 9/2026" in p.read_text()
+
+
+def test_fetch_mhc_raises_when_fallback_also_whitespace(tmp_path, monkeypatch):
+    date = "2026-07-24"
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    monkeypatch.setattr(cl, "_mhc_pdfs", lambda d: [])
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: "   \n\t  ")
+    with pytest.raises(ValueError):
+        cl.fetch("mhc", date)
+    assert not (tmp_path / f"mhc_{date}.txt").exists()
+
+
 @pytest.mark.network
 def test_fetch_live_today():
     import aides

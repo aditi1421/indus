@@ -135,6 +135,19 @@ def pdf_to_text(path: Path) -> str:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
+def _fetch_via_browser(court: str, date: str) -> str | None:
+    """Last resort: an AI browser agent reads the cause list. Costs money; only on scraper miss."""
+    from config import get_cfg
+    from browser_use_sdk import BrowserUse
+    c = COURTS[court]
+    task = (f"Go to {c.index_url}. Find the daily cause list for {date} "
+            f"({c.name}). Open every PDF for that date and return the FULL text content, "
+            f"preserving item numbers. If none exists for that date, reply exactly NO_LIST.")
+    result = BrowserUse(api_key=get_cfg().key_browser_use).run(task)
+    text = getattr(result, "output", None) or str(result)
+    return None if "NO_LIST" in text else text
+
+
 def fetch(court: str, date: str) -> Path:
     c = COURTS[court]
     out = CACHE / f"{court}_{date}.txt"
@@ -144,8 +157,12 @@ def fetch(court: str, date: str) -> Path:
     if court == "mhc":
         pdf_blobs = _mhc_pdfs(date)
         if not pdf_blobs:
-            raise ValueError(f"No cause-list PDFs found for {c.name} on {date}. "
-                              f"It may not be published yet, or the site layout changed.")
+            text = _fetch_via_browser(court, date)
+            if not text or not text.strip():
+                raise ValueError(f"No cause-list PDFs found for {c.name} on {date} "
+                                  f"(direct scrape and browser fallback both empty).")
+            out.write_text(text, "utf-8")
+            return out
         parts = []
         for i, data in enumerate(pdf_blobs):
             pdf = CACHE / f"{court}_{date}_{i}.pdf"
@@ -161,8 +178,12 @@ def fetch(court: str, date: str) -> Path:
 
     links = pdf_links(c, date)
     if not links:
-        raise ValueError(f"No cause-list PDFs found for {c.name} on {date}. "
-                         f"It may not be published yet, or the site layout changed.")
+        text = _fetch_via_browser(court, date)
+        if not text or not text.strip():
+            raise ValueError(f"No cause-list PDFs found for {c.name} on {date} "
+                              f"(direct scrape and browser fallback both empty).")
+        out.write_text(text, "utf-8")
+        return out
     parts = []
     for url in links:
         pdf = CACHE / f"{court}_{date}_{hashlib.md5(url.encode()).hexdigest()[:8]}.pdf"
