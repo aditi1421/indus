@@ -1,32 +1,7 @@
 import agent
-from dataclasses import dataclass
-from wraps import SSM
+from config import get_cfg
 
-
-@dataclass
-class Config:
-    bucket: str
-    key_openai: str
-    key_gemini: str
-    sheet_indus: str
-    key_indus: str
-    sheet_mhc = "MHC"
-
-    @classmethod
-    def load(cls):
-        app = "/apps/courts"
-        keys = {
-            "bucket": "/apps/bucket",
-            "key_openai": "/core/openai/key_openai",
-            "key_gemini": "/core/google/key_gemini",
-            "sheet_indus": f"{app}/sheet_indus",
-            "key_indus": f"{app}/key_indus",
-        }
-        ssm = SSM().get(list(keys.values()))
-        return cls(**{k: ssm[v] for k, v in keys.items()})
-
-
-cfg = Config.load()
+cfg = get_cfg()
 
 agent.set_default_openai_key(cfg.key_openai)
 
