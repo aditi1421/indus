@@ -140,6 +140,7 @@ def current_datetime(tz: str = "Asia/Kolkata"):
 def search_causelist(court: str, date: str, query: str):
     """Search a court's cause list. court: sc|dhc|mhc. date: YYYY-MM-DD. query: case number or party name."""
     import causelists
+    court = court.strip().lower()
     if court not in causelists.COURTS:
         raise ValueError(f"Unknown court '{court}'. Use: sc, dhc, mhc.")
     hits = causelists.search(court, date, query)
@@ -169,4 +170,6 @@ def list_firm_cases(court: str = ""):
     df = cases.firm_cases()
     if court:
         df = df[df.court == court.lower()]
-    return df.to_string(index=False) or "No cases."
+    if df.empty:
+        return "No cases."
+    return df.to_string(index=False)
