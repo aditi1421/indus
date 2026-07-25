@@ -143,8 +143,15 @@ def _fetch_via_browser(court: str, date: str) -> str | None:
     task = (f"Go to {c.index_url}. Find the daily cause list for {date} "
             f"({c.name}). Open every PDF for that date and return the FULL text content, "
             f"preserving item numbers. If none exists for that date, reply exactly NO_LIST.")
-    result = BrowserUse(api_key=get_cfg().key_browser_use).run(task)
-    text = getattr(result, "output", None) or str(result)
+    try:
+        result = BrowserUse(api_key=get_cfg().key_browser_use).run(task)
+    except Exception as e:
+        print(f"Browser-use fallback failed: {e}")
+        return None
+
+    text = getattr(result, "output", None)
+    if not text or not text.strip():
+        return None
     return None if "NO_LIST" in text else text
 
 

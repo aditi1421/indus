@@ -130,6 +130,8 @@ def test_fetch_raises_when_fallback_also_empty(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         cl.fetch("sc", "2026-07-24")
 
+    assert not (tmp_path / "sc_2026-07-24.txt").exists()
+
 
 def test_fetch_mhc_falls_back_to_browser_use(tmp_path, monkeypatch):
     monkeypatch.setattr(cl, "CACHE", tmp_path)
@@ -147,6 +149,73 @@ def test_fetch_mhc_raises_when_fallback_also_whitespace(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         cl.fetch("mhc", date)
     assert not (tmp_path / f"mhc_{date}.txt").exists()
+
+
+def test_fetch_via_browser_handles_sdk_exception(monkeypatch):
+    """Test that _fetch_via_browser returns None when browser SDK raises."""
+    import sys
+    import types
+
+    # Create fake SDK module that raises on .run()
+    fake_browser_sdk = types.ModuleType("browser_use_sdk")
+
+    class FakeBrowserUseFails:
+        def __init__(self, api_key):
+            self.api_key = api_key
+
+        def run(self, task):
+            raise RuntimeError("Simulated browser SDK failure")
+
+    fake_browser_sdk.BrowserUse = FakeBrowserUseFails
+
+    # Create fake config module
+    fake_config = types.ModuleType("config")
+
+    class FakeCfg:
+        key_browser_use = "test-key"
+
+    fake_config.get_cfg = lambda: FakeCfg()
+
+    # Inject into sys.modules before calling the function
+    monkeypatch.setitem(sys.modules, "browser_use_sdk", fake_browser_sdk)
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+
+    result = cl._fetch_via_browser("sc", "2026-07-24")
+    assert result is None
+
+
+def test_fetch_via_browser_rejects_empty_output(monkeypatch):
+    """Test that _fetch_via_browser returns None when output is empty or None."""
+    import sys
+    import types
+
+    fake_browser_sdk = types.ModuleType("browser_use_sdk")
+
+    class FakeBrowserUseEmptyOutput:
+        def __init__(self, api_key):
+            self.api_key = api_key
+
+        def run(self, task):
+            # Return object with empty output
+            class Result:
+                output = ""
+
+            return Result()
+
+    fake_browser_sdk.BrowserUse = FakeBrowserUseEmptyOutput
+
+    fake_config = types.ModuleType("config")
+
+    class FakeCfg:
+        key_browser_use = "test-key"
+
+    fake_config.get_cfg = lambda: FakeCfg()
+
+    monkeypatch.setitem(sys.modules, "browser_use_sdk", fake_browser_sdk)
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+
+    result = cl._fetch_via_browser("sc", "2026-07-24")
+    assert result is None
 
 
 @pytest.mark.network
