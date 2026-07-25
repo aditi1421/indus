@@ -173,3 +173,36 @@ def list_firm_cases(court: str = ""):
     if df.empty:
         return "No cases."
     return df.to_string(index=False)
+
+
+# --- billing skills (Zoho Invoice) ---
+
+
+def _zoho():
+    from zoho import Zoho
+    return Zoho.from_cfg()
+
+
+@skill
+def zoho_find_customer(name: str):
+    """Find a Zoho customer by (partial) name. Returns customer ids for invoicing."""
+    hits = _zoho().customers(name)
+    if not hits:
+        return f"No Zoho customer matching '{name}'."
+    return "\n".join(f"{c['contact_id']} | {c['contact_name']}" for c in hits[:10])
+
+
+@skill
+def zoho_create_draft_invoice(customer_id: str, item_description: str, amount: float, quantity: float = 1):
+    """Create a DRAFT invoice in Zoho. It is NOT sent. Report invoice number, total and invoice_id back, and tell the user to say 'send invoice <invoice_id>' to actually email it."""
+    inv = _zoho().create_draft(customer_id, [{"name": item_description, "rate": amount, "quantity": quantity}])
+    return (f"Draft created: {inv['invoice_number']} for ₹{inv['total']:.2f} "
+            f"(invoice_id={inv['invoice_id']}, status={inv['status']}). "
+            f"NOT sent — ask the user to confirm sending.")
+
+
+@skill
+def zoho_send_invoice(invoice_id: str):
+    """Email a previously created draft invoice to the customer. Only call after the user explicitly confirms sending this invoice_id."""
+    _zoho().email_invoice(invoice_id)
+    return f"Invoice {invoice_id} emailed to the customer."
