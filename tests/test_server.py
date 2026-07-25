@@ -33,3 +33,17 @@ def test_history_truncated(monkeypatch, tmp_path):
         c.post("/chat", json={"chat": GROUP, "sender": "s", "text": f"m{i}"})
     hist = json.loads((tmp_path / "group.json").read_text())
     assert len(hist) <= server.MAX_HISTORY
+
+
+def test_corrupted_history_recovers(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    hf = tmp_path / "group.json"
+    # Write corrupted JSON to history file
+    hf.write_text("{corrupt")
+    # POST should recover gracefully
+    r = c.post("/chat", json={"chat": GROUP, "sender": "Adv. Mehta", "text": "hi"})
+    assert r.status_code == 200
+    assert r.json()["reply"] == "echo:Adv. Mehta: hi"
+    # Verify history file now contains valid JSON
+    hist = json.loads(hf.read_text())
+    assert isinstance(hist, list)

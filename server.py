@@ -25,6 +25,21 @@ def _ask(text, hist):
     return agent.ask_full(text, history=hist or None)
 
 
+def _load_history(hf):
+    """Load history from file, tolerating corruption."""
+    try:
+        return json.loads(hf.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _save_history(hf, hist):
+    """Save history atomically with temp file."""
+    tmp = hf.with_suffix(".tmp")
+    tmp.write_text(json.dumps(hist))
+    tmp.replace(hf)
+
+
 class ChatIn(BaseModel):
     chat: str
     sender: str = ""
@@ -38,12 +53,12 @@ def chat(m: ChatIn):
     prompt = f"{m.sender}: {m.text}" if m.sender else m.text
     with _LOCK:
         hf = HIST_DIR / "group.json"
-        hist = json.loads(hf.read_text()) if hf.is_file() else []
+        hist = _load_history(hf) if hf.is_file() else []
         try:
             reply, hist = _ask(prompt, hist)
         except Exception as e:
             return {"reply": f"Sorry, I hit an error: {e}"}
-        hf.write_text(json.dumps(hist[-MAX_HISTORY:]))
+        _save_history(hf, hist[-MAX_HISTORY:])
     return {"reply": reply}
 
 
