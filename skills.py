@@ -131,3 +131,42 @@ def current_datetime(tz: str = "Asia/Kolkata"):
     """Current date/time. Use for any question involving today/tomorrow/this week/deadlines."""
     ts = aides.now(tz=tz)
     return f"{aides.dtts(ts, tz=tz)} ({ts.strftime('%A')}), {tz}"
+
+
+# --- court clerk skills ---
+
+
+@skill
+def search_causelist(court: str, date: str, query: str):
+    """Search a court's cause list. court: sc|dhc|mhc. date: YYYY-MM-DD. query: case number or party name."""
+    import causelists
+    if court not in causelists.COURTS:
+        raise ValueError(f"Unknown court '{court}'. Use: sc, dhc, mhc.")
+    hits = causelists.search(court, date, query)
+    name = causelists.COURTS[court].name
+    if not hits:
+        return f"No match for '{query}' in {name} cause list of {date}."
+    return f"{len(hits)} match(es) in {name} list of {date}:\n\n" + "\n\n".join(hits[:20])
+
+
+@skill
+def todays_causelist_matches(date: str):
+    """Firm matters listed on a date (YYYY-MM-DD) across SC, Delhi HC, Meghalaya HC. Use for 'what's listed today/tomorrow'."""
+    import cases
+    rows = cases.listings_for(date)
+    if not rows:
+        return f"No firm matters found in published cause lists for {date}."
+    lines = []
+    for r in rows:
+        lines.append(f"• {r['case_no']} ({r['client']}) — {r['court'].upper()}\n{r['matches'][0]}")
+    return f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n\n".join(lines)
+
+
+@skill
+def list_firm_cases(court: str = ""):
+    """List the firm's tracked cases, optionally filtered by court (sc|dhc|mhc)."""
+    import cases
+    df = cases.firm_cases()
+    if court:
+        df = df[df.court == court.lower()]
+    return df.to_string(index=False) or "No cases."
