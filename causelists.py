@@ -1,5 +1,6 @@
 import hashlib
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,15 @@ CACHE = Path(".cache/causelists")
 CACHE.mkdir(parents=True, exist_ok=True)
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh) nyaya-clerk/1.0"}
+
+# In-process negative cache: (court, date) -> time.time() of the last "not
+# published" conclusion. Without this, an unpublished day re-triggers the
+# full scrape + paid browser-use fallback on every call for that court/date
+# (fetch()'s success cache never gets a chance to help, since there's never
+# a successful fetch to cache). NEGATIVE_TTL bounds how long we trust a
+# stale "not published yet" before checking again.
+_NEGATIVE: dict[tuple[str, str], float] = {}
+NEGATIVE_TTL = 1800
 
 
 @dataclass
@@ -152,10 +162,27 @@ def _fetch_via_browser(court: str, date: str) -> str | None:
     text = getattr(result, "output", None)
     if not text or not text.strip():
         return None
-    return None if "NO_LIST" in text else text
+    return None if text.strip() == "NO_LIST" else text
 
 
 def fetch(court: str, date: str) -> Path:
+    key = (court, date)
+    cached_at = _NEGATIVE.get(key)
+    if cached_at is not None and (time.time() - cached_at) < NEGATIVE_TTL:
+        c = COURTS[court]
+        raise ValueError(f"No cause-list found for {c.name} on {date} (cached result; "
+                          f"not published as of the last check within the last "
+                          f"{NEGATIVE_TTL}s).")
+    try:
+        out = _fetch_impl(court, date)
+    except ValueError:
+        _NEGATIVE[key] = time.time()
+        raise
+    _NEGATIVE.pop(key, None)
+    return out
+
+
+def _fetch_impl(court: str, date: str) -> Path:
     c = COURTS[court]
     out = CACHE / f"{court}_{date}.txt"
     if out.is_file() and out.stat().st_size > 0:

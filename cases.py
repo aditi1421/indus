@@ -4,6 +4,7 @@ from datetime import datetime
 import pandas as pd
 
 import aides
+from causelists import fetch as _causelist_fetch
 from causelists import search as _causelist_search
 
 # lowercase substring of real header -> canonical name. Order matters for the
@@ -37,6 +38,10 @@ def _raw_sheet() -> pd.DataFrame:
 
 def _search(court, date, query):
     return _causelist_search(court, date, query)
+
+
+def _fetch(court, date):
+    return _causelist_fetch(court, date)
 
 
 def _map_columns(columns: list[str]) -> dict:
@@ -147,9 +152,24 @@ def listings_for(date: str) -> list[dict]:
         datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
         raise ValueError(f"date must be YYYY-MM-DD, got {date!r}")
+    df = firm_cases()
+
+    # Resolve availability for each DISTINCT court once up front. A register
+    # with many rows for the same court (the common case: everything defaults
+    # to "mhc") must not trigger the expensive scrape/paid-browser-fallback
+    # path once per row -- at most once per court per call.
+    unavailable = set()
+    for court in df.court.unique():
+        if court not in ("sc", "dhc", "mhc"):
+            continue
+        try:
+            _fetch(court, date)
+        except ValueError:
+            unavailable.add(court)
+
     out = []
-    for _, row in firm_cases().iterrows():
-        if row.court not in ("sc", "dhc", "mhc"):
+    for _, row in df.iterrows():
+        if row.court not in ("sc", "dhc", "mhc") or row.court in unavailable:
             continue
         try:
             matches = _search(row.court, date, search_token(row.case_no))

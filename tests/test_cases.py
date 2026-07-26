@@ -21,6 +21,7 @@ def test_firm_cases_normalizes(monkeypatch):
 
 def test_listings_for_matches_only_listed(monkeypatch):
     monkeypatch.setattr(cases, "_raw_sheet", _fake_sheet)
+    monkeypatch.setattr(cases, "_fetch", lambda court, date: None)
 
     def fake_search(court, date, query):
         if court == "dhc" and "678/2026" in query:
@@ -153,6 +154,7 @@ def test_search_token_leaves_plain_case_no_unchanged():
 
 def test_listings_for_uses_search_token(monkeypatch):
     monkeypatch.setattr(cases, "_raw_sheet", _fake_register_sheet)
+    monkeypatch.setattr(cases, "_fetch", lambda court, date: None)
     captured = []
 
     def fake_search(court, date, query):
@@ -162,6 +164,41 @@ def test_listings_for_uses_search_token(monkeypatch):
     monkeypatch.setattr(cases, "_search", fake_search)
     cases.listings_for("2026-07-24")
     assert captured == ["LR(B)6/2026", "MS/VI-768/2020/31"]
+
+
+# --- review finding: per-row paid browser fallback for an unpublished court
+# must not run once per row -- fetch() is resolved once per DISTINCT court,
+# and rows whose court is unavailable are skipped without ever calling
+# _search (the expensive per-row boundary). ---
+
+
+def _fake_sheet_five_mhc_rows():
+    return pd.DataFrame({
+        "Case No": [f"WP(C) {i}/2026" for i in range(5)],
+        "Parties": ["A Vs B"] * 5,
+        "Court": ["MHC"] * 5,
+        "Client": [f"Client{i}" for i in range(5)],
+    })
+
+
+def test_listings_for_resolves_court_once_and_skips_unavailable_rows(monkeypatch):
+    monkeypatch.setattr(cases, "_raw_sheet", _fake_sheet_five_mhc_rows)
+
+    fetch_calls = []
+
+    def fake_fetch(court, date):
+        fetch_calls.append(court)
+        raise ValueError("not published")
+
+    def fake_search(court, date, query):
+        raise AssertionError("_search must not be called for an unavailable court")
+
+    monkeypatch.setattr(cases, "_fetch", fake_fetch)
+    monkeypatch.setattr(cases, "_search", fake_search)
+
+    out = cases.listings_for("2026-07-24")
+    assert out == []
+    assert fetch_calls == ["mhc"]  # exactly one call despite 5 rows
 
 
 def test_firm_register_skill_shows_status_and_no_nan(monkeypatch):
