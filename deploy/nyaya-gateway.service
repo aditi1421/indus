@@ -1,0 +1,14 @@
+[Unit]
+Description=Nyaya WhatsApp gateway (whatsmeow)
+After=nyaya-agent.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agent/gateway
+EnvironmentFile=/home/ubuntu/agent/gateway/gateway.env
+ExecStart=/home/ubuntu/agent/gateway/gateway
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

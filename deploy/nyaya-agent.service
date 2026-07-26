@@ -1,0 +1,13 @@
+[Unit]
+Description=Nyaya clerk agent (FastAPI)
+After=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agent
+ExecStart=/home/ubuntu/agent/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8600
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
