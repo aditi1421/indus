@@ -40,6 +40,27 @@ def _save_history(hf, hist):
     tmp.replace(hf)
 
 
+def _trim_history(hist, max_items=MAX_HISTORY):
+    """Slice to the last max_items, then drop leading items that aren't a
+    plain message.
+
+    `to_input_list()` can include tool/function items (type keys like
+    "function_call"/"function_call_output", no usable "role"). A raw
+    positional slice can strand one of these at the front (e.g. a
+    function_call_output whose matching function_call fell just outside the
+    window) or leave a trailing unanswered function_call. Either poisons the
+    persisted history: the Responses API 400s on it forever. Be defensive —
+    anything without a role in our known set is treated as droppable.
+    """
+    trimmed = list(hist[-max_items:] if max_items else hist)
+    while trimmed and trimmed[0].get("role") not in ("user", "assistant", "system", "developer"):
+        trimmed.pop(0)
+    return trimmed
+
+
+_APOLOGY = "Sorry, I hit an internal error — please try again."
+
+
 class ChatIn(BaseModel):
     chat: str
     sender: str = ""
@@ -57,8 +78,18 @@ def chat(m: ChatIn):
         try:
             reply, hist = _ask(prompt, hist)
         except Exception as e:
-            return {"reply": f"Sorry, I hit an error: {e}"}
-        _save_history(hf, hist[-MAX_HISTORY:])
+            print(f"[server] _ask failed: {e!r}")
+            if not hist:
+                return {"reply": _APOLOGY}
+            # The persisted history itself may be the poison (a stranded
+            # tool item that makes the Responses API 400 on every request).
+            # Retry once with a clean slate instead of wedging forever.
+            try:
+                reply, hist = _ask(prompt, [])
+            except Exception as e2:
+                print(f"[server] retry with empty history also failed: {e2!r}")
+                return {"reply": _APOLOGY}
+        _save_history(hf, _trim_history(hist))
     return {"reply": reply}
 
 
