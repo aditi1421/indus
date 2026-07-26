@@ -13,7 +13,6 @@ from skills import SKILLS
 KEY_OPENAI = os.getenv("OPENAI_API_KEY", "")
 MODEL = "gpt-4o"
 MAX_TOKENS = 2048
-SEED = 7
 
 PERSONA = """You are Indus Bot, the calm, precise legal clerk of Indus Law Associates, serving the Indian legal system. Speak in plain English with the measured courtesy of a seasoned law clerk.
 

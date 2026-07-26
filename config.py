@@ -36,6 +36,12 @@ class Config:
     @classmethod
     def load(cls):
         ssm = SSM().get(list(KEYS.values()))
+        missing = [path for path in KEYS.values() if ssm.get(path) is None]
+        if missing:
+            raise ValueError(
+                f"Missing/None SSM parameter(s), check they exist and the instance "
+                f"role can read them: {', '.join(sorted(missing))}"
+            )
         return cls(**{k: ssm[v] for k, v in KEYS.items()})
 
 
