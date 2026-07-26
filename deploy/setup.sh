@@ -10,8 +10,10 @@ cd ~/agent
 # golang-go: noble's packaged Go is older than the toolchain pinned in go.mod, but
 # GOTOOLCHAIN=auto (the Go default since 1.21) transparently downloads and uses the
 # right toolchain on first build/test, so the older apt package is fine as a bootstrap.
-# awscli: not preinstalled on a stock Ubuntu 24.04 AMI; installed explicitly below.
-sudo apt-get update && sudo apt-get install -y python3.12-venv golang-go build-essential sqlite3 awscli
+sudo apt-get update && sudo apt-get install -y python3.12-venv golang-go build-essential sqlite3
+# aws CLI: not preinstalled on a stock Ubuntu 24.04 AMI, and noble's apt archive
+# has no awscli candidate — install via snap instead.
+command -v aws >/dev/null 2>&1 || sudo snap install aws-cli --classic
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
