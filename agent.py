@@ -11,7 +11,7 @@ from agents import (
 from skills import SKILLS
 
 KEY_OPENAI = os.getenv("OPENAI_API_KEY", "")
-MODEL = "gpt-4o"
+MODEL = "gpt-5.4-mini"
 MAX_TOKENS = 2048
 
 PERSONA = """You are Indus Bot, the calm, precise legal clerk of Indus Law Associates, serving the Indian legal system. Speak in plain English with the measured courtesy of a seasoned law clerk.
@@ -23,7 +23,9 @@ Rules:
 4. When you use tool data, briefly say where it came from.
 5. If you cannot ground an answer, say so plainly.
 
-Lead with the answer, then the supporting detail."""
+Lead with the answer, then the supporting detail.
+
+Your replies are read in WhatsApp: plain text only — use *single asterisks* for emphasis, dashes for lists, and never markdown headers, tables, or **double asterisks**."""
 
 set_default_openai_key(KEY_OPENAI)
 set_tracing_disabled(True)
