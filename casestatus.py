@@ -68,7 +68,7 @@ def _load_form_tokens(session, page_path) -> dict:
     return tokens
 
 
-def _fetch_captcha(session, page_path=CASE_NO_PAGE):
+def _fetch_captcha(session, page_path):
     """Mint a fresh captcha id (like the page JS does), GET the PNG.
     This GET sets PHPSESSID — the cookie that ties the answer to the search POST."""
     cid = "".join(random.choices(string.ascii_lowercase + string.digits, k=40))
@@ -99,14 +99,17 @@ def default_solver(png: bytes) -> int:
 def _parse_results(results_html) -> list[dict]:
     """Parse the success resultsHtml table into row dicts."""
     soup = BeautifulSoup(results_html, "lxml")
-    if soup.find("tr") is None:
+    trs = soup.find_all("tr")
+    if not trs:
         raise ValueError("SC search succeeded but resultsHtml contained no table rows — "
                          "the results markup may have changed")
+    # a <tr> with <td> cells is a data row; header rows carry only <th>
+    data_trs = [tr for tr in trs if tr.find("td")]
     rows = []
-    for tr in soup.find_all("tr"):
+    for tr in data_trs:
         tds = tr.find_all("td")
         if len(tds) < 6:
-            continue  # header / spacer rows
+            continue  # spacer / malformed rows
         texts = [td.get_text(" ", strip=True) for td in tds]
         serial, diary_txt, case_txt, petitioner, respondent, status = texts[:6]
 
@@ -128,6 +131,9 @@ def _parse_results(results_html) -> list[dict]:
         rows.append({"serial": serial, "diary_no": diary_no, "diary_year": diary_year,
                      "case_number": case_number, "registered_on": registered_on,
                      "petitioner": petitioner, "respondent": respondent, "status": status})
+    if data_trs and not rows:
+        raise ValueError("resultsHtml rows did not match the expected 6-column layout — "
+                         "the SC site may have changed")
     return rows
 
 
@@ -161,22 +167,35 @@ def _run_search(action, page_path, form_fields, *, max_captcha_retries, solve) -
             answer = solve(png)
         except ValueError:
             continue  # solver couldn't read it — burn the attempt, fetch a fresh captcha
+        except openai.OpenAIError as e:
+            # a dead API won't recover mid-loop — fail immediately, no retry
+            return {"found": False, "results": [],
+                    "error": f"captcha solver unavailable: {type(e).__name__}"}
 
+        # **tokens first so a stray harvested "scid" field can't clobber the fresh cid
         payload = {"action": action, "language": "en", **form_fields,
-                   "siwp_captcha_value": str(answer), "scid": cid,
-                   **tokens, "es_ajax_request": "1"}
+                   **tokens, "siwp_captcha_value": str(answer),
+                   "scid": cid, "es_ajax_request": "1"}
         try:
             resp = session.post(
                 AJAX, data=payload, timeout=TIMEOUT,
                 headers={"Referer": BASE + page_path, "Origin": BASE,
                          "X-Requested-With": "XMLHttpRequest"})
-            body = resp.json()
         except requests.RequestException as e:
             return {"found": False, "results": [],
                     "error": f"SC case-status search request failed: {e}"}
+        if resp.status_code != 200:
+            return {"found": False, "results": [],
+                    "error": f"SC portal returned HTTP {resp.status_code}"}
+        try:
+            body = resp.json()
         except ValueError:
             return {"found": False, "results": [],
                     "error": "SC case-status endpoint returned non-JSON — "
+                             "the API may have changed"}
+        if not isinstance(body, dict):
+            return {"found": False, "results": [],
+                    "error": "SC case-status endpoint returned an unrecognized JSON shape — "
                              "the API may have changed"}
 
         if body.get("success") is True:
@@ -197,9 +216,15 @@ def _run_search(action, page_path, form_fields, *, max_captcha_retries, solve) -
                     "error": "SC case-status endpoint returned an unrecognized JSON shape — "
                              "the API may have changed"}
         message = _decode_failure_message(body.get("data"))
-        if "captcha" in message.lower():
+        low = message.lower()
+        if "captcha" in low:
             continue  # wrong answer — fresh captcha, retry
-        return {"found": False, "results": [], "error": None}  # genuine not-found
+        if any(p in low for p in ("nothing found", "no record", "not found", "no case")):
+            # recognized not-found wording: the search ran cleanly and matched nothing
+            return {"found": True, "results": [], "error": None}
+        # anything else is a server-side rejection (nonce/token/wording change) — say so
+        return {"found": False, "results": [],
+                "error": f"SC search rejected: {message}"}
 
     return {"found": False, "results": [],
             "error": f"could not solve captcha after {max_captcha_retries} tries"}

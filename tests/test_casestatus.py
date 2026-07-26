@@ -72,11 +72,11 @@ DETAIL_HTML = """
 # --- HTTP boundary fakes ---
 
 class FakeResp:
-    def __init__(self, json_data=None, content=b"", text=""):
+    def __init__(self, json_data=None, content=b"", text="", status_code=200):
         self._json = json_data
         self.content = content
         self.text = text
-        self.status_code = 200
+        self.status_code = status_code
 
     def json(self):
         if self._json is None:
@@ -111,7 +111,8 @@ class FakeSession:
 
     def post(self, url, data=None, **kw):
         self.posts.append(data)
-        return FakeResp(json_data=self.post_responses.pop(0))
+        item = self.post_responses.pop(0)
+        return item if isinstance(item, FakeResp) else FakeResp(json_data=item)
 
 
 @pytest.fixture
@@ -204,9 +205,60 @@ def test_exhausted_captcha_retries(monkeypatch, no_sleep):
 def test_not_found(monkeypatch, no_sleep):
     fake = _install(monkeypatch, FakeSession([NOT_FOUND_RESPONSE]))
     res = casestatus.sc_case_status(1, 999, 1990, solve=lambda png: 5)
-    # design: not-found is a clean miss, not an error
-    assert res == {"found": False, "results": [], "error": None}
+    # design: recognized not-found wording is a clean empty result, not an error —
+    # found=True means the search itself ran fine
+    assert res == {"found": True, "results": [], "error": None}
     assert len(fake.posts) == 1  # no retry on a genuine not-found
+
+
+def test_non_captcha_rejection_is_an_error_not_a_miss(monkeypatch, no_sleep):
+    """A rejected nonce/token must NOT read as 'no record found' to the lawyer."""
+    rejection = {"success": False,
+                 "data": json.dumps({"message": "Invalid form token"})}
+    fake = _install(monkeypatch, FakeSession([rejection]))
+    res = casestatus.sc_case_status(1, 1, 2024, solve=lambda png: 5)
+    assert res["found"] is False
+    assert res["results"] == []
+    assert "SC search rejected" in res["error"]
+    assert "Invalid form token" in res["error"]
+    assert len(fake.posts) == 1  # rejections are not retried
+
+
+def test_unparseable_result_rows_fail_loud(monkeypatch, no_sleep):
+    """success:true with rows that don't match the 6-column layout must surface
+    a loud error, never a bland not-found."""
+    bad_layout = {"success": True, "data": {"resultsHtml": (
+        "<table><tr><td>1</td><td>52650/2023</td><td>only four</td>"
+        "<td>columns</td></tr></table>")}}
+    _install(monkeypatch, FakeSession([bad_layout]))
+    res = casestatus.sc_case_status(1, 1, 2024, solve=lambda png: 5)
+    assert res["found"] is False
+    assert res["error"] is not None
+    assert "6-column" in res["error"]
+
+
+def test_openai_outage_fails_fast_without_retry(monkeypatch, no_sleep):
+    fake = _install(monkeypatch, FakeSession([SUCCESS_RESPONSE]))
+
+    def dead_solver(png):
+        raise casestatus.openai.OpenAIError("api is down")
+
+    res = casestatus.sc_case_status(1, 1, 2024, solve=dead_solver)
+    assert res["found"] is False
+    assert res["results"] == []
+    assert "captcha solver unavailable" in res["error"]
+    assert "OpenAIError" in res["error"]
+    assert fake.captcha_fetches == 1  # no fresh captcha fetched — no retry
+    assert len(fake.posts) == 0       # and no search POST was attempted
+
+
+def test_non_200_search_post_reports_http_status(monkeypatch, no_sleep):
+    fake = FakeSession([FakeResp(status_code=503)])
+    _install(monkeypatch, fake)
+    res = casestatus.sc_case_status(1, 1, 2024, solve=lambda png: 5)
+    assert res["found"] is False
+    assert "HTTP 503" in res["error"]
+    assert len(fake.posts) == 1  # no retry on a server error
 
 
 def test_diary_search_uses_diary_action(monkeypatch, no_sleep):
@@ -370,6 +422,21 @@ def test_skill_reports_captcha_error_cleanly(monkeypatch):
                                          "error": "could not solve captcha after 5 tries"})
     out = skills.sc_case_status_lookup(1, 1, 2024)
     assert "captcha" in out.lower()
+
+
+def test_skill_caps_displayed_results(monkeypatch):
+    import skills
+    rows = [{"serial": str(i), "diary_no": str(10000 + i), "diary_year": "2023",
+             "case_number": f"SLP(C) No. {i:06d} / 2024", "registered_on": "",
+             "petitioner": f"PET {i}", "respondent": f"RESP {i}", "status": "PENDING"}
+            for i in range(1, 21)]
+    monkeypatch.setattr(casestatus, "sc_case_status",
+                        lambda *a, **k: {"found": True, "error": None, "results": rows})
+    out = skills.sc_case_status_lookup(1, 1, 2024)
+    assert "20 result(s)" in out
+    assert "PET 15" in out
+    assert "PET 16" not in out            # capped at 15
+    assert "and 5 more" in out
 
 
 def test_skill_not_found_message(monkeypatch):
