@@ -209,17 +209,10 @@ def zoho_find_customer(name: str):
 
 @skill
 def zoho_create_draft_invoice(customer_id: str, item_description: str, amount: float, quantity: float = 1):
-    """Create a DRAFT invoice in Zoho. It is NOT sent. Report invoice number, total and invoice_id back, and tell the user to say 'send invoice <invoice_id>' to actually email it."""
+    """Create a DRAFT invoice in Zoho. It is NOT sent to anyone. Report invoice number, total and invoice_id back; the firm reviews and finalizes drafts in the Zoho dashboard."""
     inv = _zoho().create_draft(customer_id, [{"name": item_description, "rate": amount, "quantity": quantity}])
     total = inv.get("total")
     total_txt = f"₹{total:.2f}" if isinstance(total, (int, float)) else "amount unavailable"
     return (f"Draft created: {inv.get('invoice_number', '?')} for {total_txt} "
             f"(invoice_id={inv.get('invoice_id', '?')}, status={inv.get('status', 'draft')}). "
-            f"NOT sent — ask the user to confirm sending.")
-
-
-@skill
-def zoho_send_invoice(invoice_id: str):
-    """Email a previously created draft invoice to the customer. Only call after the user explicitly confirms sending this invoice_id."""
-    _zoho().email_invoice(invoice_id)
-    return f"Invoice {invoice_id} emailed to the customer."
+            f"NOT sent — review it in the Zoho dashboard.")
