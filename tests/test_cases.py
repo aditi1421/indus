@@ -110,6 +110,31 @@ def test_firm_cases_maps_register_schema(monkeypatch):
     assert df.court.tolist() == ["mhc", "mhc"]
 
 
+# --- review finding: a column's first-matching alias must consume it, even
+# when its canon is already claimed, so it can't fall through to a later
+# alias that belongs to a different canon (e.g. Department -> "depart" ->
+# `client`, claimed by a real Client column, must not then bind to `parties`
+# via the later "part" alias). ---
+
+
+def test_map_columns_department_alias_consumed_by_earlier_claim():
+    assert cases._map_columns(["Client", "Department", "Case No"]) == {
+        "Client": "client",
+        "Case No": "case_no",
+    }
+
+
+def test_map_columns_department_alias_consumed_with_real_parties_present():
+    # Department's first match ("depart" -> client) is still consumed even
+    # though a genuine Parties column is present -- no ambiguity error, and
+    # Department stays unbound rather than stealing the parties binding.
+    assert cases._map_columns(["Client", "Department", "Parties", "Case No"]) == {
+        "Client": "client",
+        "Parties": "parties",
+        "Case No": "case_no",
+    }
+
+
 def test_search_token_strips_file_no_prefix():
     assert cases.search_token("File No. LR(B)6/2026") == "LR(B)6/2026"
 

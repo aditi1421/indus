@@ -6,10 +6,12 @@ import pandas as pd
 import aides
 from causelists import search as _causelist_search
 
-# lowercase substring of real header -> canonical name. Order matters for pass 2
-# of _map_columns: "depart" is tried (and can claim DEPARTMENT for `client`)
-# before "part" gets a chance to claim it for `parties` (since "department"
-# itself contains the substring "part").
+# lowercase substring of real header -> canonical name. Order matters for the
+# substring-matching pass of _map_columns: for the schemas this file currently
+# supports, "depart" must be tried (and claim DEPARTMENT for `client`) before
+# "part" gets a chance to claim it for `parties` (since "department" itself
+# contains the substring "part"). A column's first match in this order is the
+# only alias it is ever considered for -- see _map_columns.
 COLMAP = {
     "case": "case_no",
     "file": "case_no",
@@ -40,35 +42,52 @@ def _search(court, date, query):
 def _map_columns(columns: list[str]) -> dict:
     """Bind real sheet headers to canonical names.
 
-    Pass 1: case-insensitive exact match (stripped) against a COLMAP key wins
-    outright, so "Court" binds to `court` before "Court Fee" gets a chance.
-    Pass 2: for any canonical name still unbound, fall back to substring
-    matching among the remaining unclaimed columns; if more than one
-    unclaimed column matches, that's ambiguous and we refuse to guess.
-    """
-    bound = {}  # source column -> canonical name
-    claimed = set()  # canonical names already bound
+    Each column is resolved to its FIRST matching alias in COLMAP order, up
+    front, and that resolution is final: a column can never be reconsidered
+    for a different canonical name via some later alias, even if the canon
+    its first match points to turns out to be claimed by something else.
+    This is what prevents e.g. a "Department" column (whose first match is
+    "depart" -> `client`) from falling through to the later "part" -> `parties`
+    alias just because `client` was already bound to a real "Client" column.
 
+    A full case-insensitive match (stripped) against a COLMAP key ("exact")
+    outranks a mere substring match ("sub") for the same canon: "Court" binds
+    to `court` outright, and "Court Fee" -- whose first (and only) match is
+    also `court`, via substring -- is simply excluded rather than fought over.
+
+    For a given canon, if the exact-match candidate pool is non-empty it wins
+    outright (ambiguous only if more than one column exactly matches, e.g. two
+    differently-cased headers); otherwise the substring-match pool applies:
+    more than one candidate is ambiguous and we refuse to guess.
+    """
+    # column -> (kind, alias, canon) of its first COLMAP match, "exact" or "sub"
+    first_match = {}
     for col in columns:
         key = col.strip().lower()
         if key in COLMAP:
-            canon = COLMAP[key]
-            if canon not in claimed:
-                bound[col] = canon
-                claimed.add(canon)
-
-    for sub, canon in COLMAP.items():
-        if canon in claimed:
+            first_match[col] = ("exact", key, COLMAP[key])
             continue
-        candidates = [c for c in columns if c not in bound and sub in c.strip().lower()]
-        if len(candidates) > 1:
+        for sub, canon in COLMAP.items():
+            if sub in key:
+                first_match[col] = ("sub", sub, canon)
+                break
+
+    by_canon = {}  # canon -> {"exact": [(col, alias), ...], "sub": [(col, alias), ...]}
+    for col, (kind, alias, canon) in first_match.items():
+        by_canon.setdefault(canon, {"exact": [], "sub": []})[kind].append((col, alias))
+
+    bound = {}
+    for canon, kinds in by_canon.items():
+        pool = kinds["exact"] or kinds["sub"]
+        if len(pool) > 1:
+            cols = [c for c, _ in pool]
+            aliases = sorted({a for _, a in pool})
             raise ValueError(
-                f"Ambiguous column mapping for '{canon}': candidates {candidates} "
-                f"all match substring '{sub}'. Rename the sheet columns to disambiguate."
+                f"Ambiguous column mapping for '{canon}': candidates {cols} "
+                f"match alias(es) {aliases}. Rename the sheet columns to disambiguate."
             )
-        if candidates:
-            bound[candidates[0]] = canon
-            claimed.add(canon)
+        if pool:
+            bound[pool[0][0]] = canon
 
     return bound
 
