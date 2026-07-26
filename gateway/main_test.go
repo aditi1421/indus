@@ -51,6 +51,35 @@ func TestMatchTrigger_PrefixNoMatch(t *testing.T) {
 	}
 }
 
+func TestMatchTrigger_PrefixWithoutBoundary(t *testing.T) {
+	// "@nyaya" should NOT match "@Nyayafoo hi" (no word boundary)
+	if _, ok := matchTrigger("@Nyayafoo hi", "@nyaya"); ok {
+		t.Fatalf("expected ok=false when prefix has no word boundary")
+	}
+}
+
+func TestMatchTrigger_PrefixAlone(t *testing.T) {
+	// "@nyaya" alone (with no following text) should match and return empty string
+	text, ok := matchTrigger("@nyaya", "@nyaya")
+	if !ok {
+		t.Fatalf("expected ok=true for prefix alone")
+	}
+	if text != "" {
+		t.Fatalf("expected empty string after stripping prefix, got %q", text)
+	}
+}
+
+func TestMatchTrigger_PrefixWithSpace(t *testing.T) {
+	// "@nyaya " (with trailing space) should match and return empty string
+	text, ok := matchTrigger("@nyaya ", "@nyaya")
+	if !ok {
+		t.Fatalf("expected ok=true for prefix with space")
+	}
+	if text != "" {
+		t.Fatalf("expected empty string after stripping prefix and space, got %q", text)
+	}
+}
+
 func TestSenderName_PrefersPushName(t *testing.T) {
 	if got := senderName("Alice", "919999999999"); got != "Alice" {
 		t.Fatalf("expected pushname, got %q", got)

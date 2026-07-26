@@ -25,11 +25,12 @@ import (
 )
 
 var (
-	client   *whatsmeow.Client
-	agentURL string
-	groupJID types.JID
-	trigger  string
-	sendMu   sync.Mutex // serialize + pace outbound sends
+	client      *whatsmeow.Client
+	agentURL    string
+	groupJID    types.JID
+	trigger     string
+	sendMu      sync.Mutex // serialize + pace outbound sends
+	agentClient = &http.Client{Timeout: 180 * time.Second}
 )
 
 func env(k, def string) string {
@@ -48,9 +49,9 @@ func textOf(msg *waE2E.Message) string {
 
 // matchTrigger applies the TRIGGER_PREFIX filter to an incoming message body.
 // If prefix is empty, every message matches unchanged. Otherwise the message
-// must start with prefix (case-insensitive); the prefix is stripped and the
-// remainder trimmed. Returns (text, ok) - ok is false when the message should
-// be ignored.
+// must start with prefix (case-insensitive) followed by end-of-string or
+// whitespace; the prefix is stripped and the remainder trimmed. Returns (text, ok)
+// - ok is false when the message should be ignored.
 func matchTrigger(text, prefix string) (string, bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -59,10 +60,20 @@ func matchTrigger(text, prefix string) (string, bool) {
 	if prefix == "" {
 		return text, true
 	}
-	if !strings.HasPrefix(strings.ToLower(text), strings.ToLower(prefix)) {
+	lower := strings.ToLower(text)
+	lowerPrefix := strings.ToLower(prefix)
+	if !strings.HasPrefix(lower, lowerPrefix) {
 		return "", false
 	}
-	return strings.TrimSpace(text[len(prefix):]), true
+	// Check word boundary: prefix must be followed by end-of-string or whitespace
+	afterPrefix := text[len(prefix):]
+	if len(afterPrefix) > 0 {
+		// First character after prefix must be whitespace
+		if !strings.ContainsRune(" \t\n\r", rune(afterPrefix[0])) {
+			return "", false
+		}
+	}
+	return strings.TrimSpace(afterPrefix), true
 }
 
 // senderName picks the display name to attribute a message to: pushname if
@@ -86,7 +97,7 @@ func sendText(text string) error {
 func askAgent(sender, text string) string {
 	body, _ := json.Marshal(map[string]string{
 		"chat": groupJID.String(), "sender": sender, "text": text})
-	resp, err := http.Post(agentURL+"/chat", "application/json", bytes.NewReader(body))
+	resp, err := agentClient.Post(agentURL+"/chat", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "The clerk service is unreachable right now."
 	}
@@ -200,7 +211,12 @@ func main() {
 
 	http.HandleFunc("/send", newSendHandler(sendText))
 	sendAddr := env("SEND_ADDR", "127.0.0.1:8601")
-	go http.ListenAndServe(sendAddr, nil)
+	go func() {
+		if err := http.ListenAndServe(sendAddr, nil); err != nil {
+			fmt.Fprintf(os.Stderr, "send API failed: %v\n", err)
+			os.Exit(1)
+		}
+	}()
 	fmt.Println("gateway up; send API on", sendAddr)
 
 	c := make(chan os.Signal, 1)
