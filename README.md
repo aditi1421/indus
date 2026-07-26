@@ -97,7 +97,7 @@ access to the bucket in `/apps/bucket`.
    - **QR scan**: `journalctl -fu nyaya-gateway` and scan the code with the firm's WhatsApp
      (Settings > Linked Devices).
    - **Remote pairing code** (no QR/screen needed): stop the service, run
-     `./gateway/gateway -paircode 919217480551` (an 8-character code is printed; enter it on
+     `./gateway/gateway -paircode <bot-number>` (an 8-character code is printed; enter it on
      the phone under Settings > Linked Devices > Link with phone number instead — the code is
      only valid for a few minutes), then restart `nyaya-gateway` once linked.
 6. Verify:
