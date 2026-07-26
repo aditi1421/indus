@@ -218,6 +218,76 @@ def test_fetch_via_browser_rejects_empty_output(monkeypatch):
     assert result is None
 
 
+def test_fetch_negative_cache_avoids_repeat_scrape_and_fallback(tmp_path, monkeypatch):
+    # review finding: an unpublished court/date must not re-trigger the full
+    # scrape + paid browser-use fallback on every call -- a short-lived
+    # negative cache should short-circuit the second call entirely.
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    monkeypatch.setattr(cl, "_NEGATIVE", {})
+
+    calls = {"links": 0, "browser": 0}
+
+    def fake_links(court, date):
+        calls["links"] += 1
+        return []
+
+    def fake_browser(court, date):
+        calls["browser"] += 1
+        return None
+
+    monkeypatch.setattr(cl, "pdf_links", fake_links)
+    monkeypatch.setattr(cl, "_fetch_via_browser", fake_browser)
+
+    with pytest.raises(ValueError):
+        cl.fetch("sc", "2026-07-24")
+    with pytest.raises(ValueError, match="cached result"):
+        cl.fetch("sc", "2026-07-24")
+
+    assert calls["links"] == 1
+    assert calls["browser"] == 1
+
+
+def test_fetch_negative_cache_cleared_on_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    # TTL=0 means the stale-looking pre-existing entry never short-circuits
+    # the call, so we can observe that a successful fetch clears it.
+    monkeypatch.setattr(cl, "NEGATIVE_TTL", 0)
+    monkeypatch.setattr(cl, "_NEGATIVE", {("sc", "2026-07-24"): __import__("time").time()})
+    monkeypatch.setattr(cl, "pdf_links", lambda c, d: ["https://x/y.pdf"])
+    monkeypatch.setattr(cl, "pdf_to_text", lambda path: "1. Some Case No. 1/2026 A Vs B\n")
+
+    class _FakeResp:
+        content = b"pdf-bytes"
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(cl.requests, "get", lambda *a, **kw: _FakeResp())
+
+    cl.fetch("sc", "2026-07-24")
+    assert ("sc", "2026-07-24") not in cl._NEGATIVE
+
+
+def test_fetch_negative_cache_expires_after_ttl(tmp_path, monkeypatch):
+    monkeypatch.setattr(cl, "CACHE", tmp_path)
+    monkeypatch.setattr(cl, "NEGATIVE_TTL", 1800)
+    stale = __import__("time").time() - 1801
+    monkeypatch.setattr(cl, "_NEGATIVE", {("sc", "2026-07-24"): stale})
+
+    calls = {"links": 0}
+
+    def fake_links(court, date):
+        calls["links"] += 1
+        return []
+
+    monkeypatch.setattr(cl, "pdf_links", fake_links)
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: None)
+
+    with pytest.raises(ValueError):
+        cl.fetch("sc", "2026-07-24")
+    assert calls["links"] == 1  # stale entry did not short-circuit
+
+
 @pytest.mark.network
 def test_fetch_live_today():
     import aides
