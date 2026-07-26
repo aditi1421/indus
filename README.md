@@ -65,7 +65,7 @@ All config is pulled from AWS SSM Parameter Store at startup (`config.py`). Stor
 | `/apps/courts/zoho_refresh` | Zoho OAuth refresh token |
 | `/apps/courts/zoho_org` | Zoho Invoice organization id |
 | `/apps/courts/whatsapp_group` | the firm group's JID, e.g. `120363xxxxxxxxxx@g.us` |
-| `/apps/courts/whatsapp_bot_number` | the WhatsApp number the gateway is linked as |
+| `/apps/courts/whatsapp_bot_number` | reference only — no code reads this; it records the number to pass to `./gateway -paircode <number>` when (re)linking |
 
 ## Local dev
 
