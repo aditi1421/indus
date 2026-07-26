@@ -36,7 +36,6 @@ agent = Agent(
     model_settings=ModelSettings(
         max_tokens=MAX_TOKENS,
         temperature=0,
-        extra_args={"seed": SEED},
     ),
     tools=SKILLS,
 )
