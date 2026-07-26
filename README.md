@@ -112,10 +112,10 @@ access to the bucket in `/apps/bucket`.
 ### Note: why setup.sh doesn't `pip install -e` the helper packages
 
 `aides`'s (and `wraps`'s) `pyproject.toml` declares `requires-python = ">=3.14.2"`, even though
-the code runs fine on 3.11. `pip install -e` refuses to install it under 3.11 because of that
-constraint. Instead, `setup.sh` writes a `.pth` path file into the venv's `site-packages`
-pointing at `~/packages/aides` and `~/packages/wraps` directly, so they import normally without
-going through pip's version check.
+the code runs fine on the distro python3 (3.12 on Ubuntu 24.04). `pip install -e` refuses to
+install it under that version because of that constraint. Instead, `setup.sh` writes a `.pth`
+path file into the venv's `site-packages` pointing at `~/packages/aides` and `~/packages/wraps`
+directly, so they import normally without going through pip's version check.
 
 ### Changing the WhatsApp group
 
