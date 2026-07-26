@@ -67,7 +67,14 @@ def _df(s):
     raise ValueError(f"'{s['id']}' is not tabular.")
 
 
-@skill
+# These four depend on ./manifest.json, which is a local-dev fixture that
+# won't exist on EC2 in production. Registering them unconditionally would
+# leave permanently-broken tools polluting the agent's tool surface (every
+# call fails with "Manifest not found"). Register them as skills only when
+# the manifest is actually present at import time; otherwise they're just
+# plain, unregistered functions.
+
+
 def list_sources(tag: str = ""):
     """List allowed sources from the manifest, optionally filtered by tag. Call first to pick a source id."""
     out = []
@@ -81,7 +88,6 @@ def list_sources(tag: str = ""):
     return "\n".join(out) or "No sources."
 
 
-@skill
 def describe_source(source_id: str):
     """Show columns/dtypes/sample (tabular) or a preview (text). Call before query_table to get column names."""
     s = _src(source_id)
@@ -93,7 +99,6 @@ def describe_source(source_id: str):
     return f"text, {len(t)} chars\n{t[:1500]}"
 
 
-@skill
 def query_table(source_id: str, where: str = "", columns: str = "", limit: int = 50):
     """Query a tabular source with pandas. where: a .query() expr e.g. "Court=='MHC'"; backtick columns with spaces."""
     s = _src(source_id)
@@ -116,7 +121,6 @@ def query_table(source_id: str, where: str = "", columns: str = "", limit: int =
     return f"{len(df)}/{total} rows from '{source_id}':\n{df.to_string(index=False) if total else '(none)'}"
 
 
-@skill
 def read_source(source_id: str, max_chars: int = 20000):
     """Read full text of a text source (md/txt/pdf/docx/html/json). Prefer query_table for tabular."""
     s = _src(source_id)
@@ -124,6 +128,11 @@ def read_source(source_id: str, max_chars: int = 20000):
         return f"'{source_id}' is tabular; use query_table.\n{_df(s).head(50).to_string(index=False)}"
     t = aides.to_markdown(_resolve(s))
     return t if len(t) <= max_chars else t[:max_chars] + "\n[...truncated]"
+
+
+if MANIFEST.is_file():
+    for _fn in (list_sources, describe_source, query_table, read_source):
+        skill(_fn)
 
 
 @skill
