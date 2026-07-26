@@ -207,17 +207,20 @@ def _sc_format(res: dict, what: str) -> str:
     import casestatus
     if res.get("error"):
         return f"SC lookup failed for {what}: {res['error']}"
-    if not res.get("found"):
+    results = res.get("results") or []
+    if not res.get("found") or not results:
         return f"No Supreme Court record found for {what}."
-    results = res["results"]
     lines = [f"Supreme Court — {len(results)} result(s) for {what}:"]
-    for r in results:
+    shown = results[:15]
+    for r in shown:
         lines.append(
             f"\n{r['case_number']}"
             + (f" (registered {r['registered_on']})" if r.get("registered_on") else "")
             + f"\nDiary: {r['diary_no']}/{r['diary_year']}"
             f"\n{r['petitioner']} vs {r['respondent']}"
             f"\nStatus: {r['status']}")
+    if len(results) > len(shown):
+        lines.append(f"\n…and {len(results) - len(shown)} more")
     if len(results) == 1:
         r = results[0]
         try:
