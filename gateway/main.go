@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -116,6 +117,10 @@ func sendText(text string) error {
 	return err
 }
 
+// maxLoggedBodyBytes caps how much of a non-200 /chat response body gets
+// logged, so a huge or malformed body can't flood the gateway's logs.
+const maxLoggedBodyBytes = 200
+
 func askAgent(sender, text string) string {
 	body, _ := json.Marshal(map[string]string{
 		"chat": groupJID.String(), "sender": sender, "text": text})
@@ -124,12 +129,18 @@ func askAgent(sender, text string) string {
 		return "The clerk service is unreachable right now."
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return ""
+	if resp.StatusCode == http.StatusForbidden {
+		return "" // not the firm group; stay silent
+	}
+	if resp.StatusCode != http.StatusOK {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxLoggedBodyBytes))
+		fmt.Printf("askAgent: /chat returned status %d, body: %q\n", resp.StatusCode, snippet)
+		return "The clerk service had an internal problem."
 	}
 	var out struct{ Reply string }
-	if json.NewDecoder(resp.Body).Decode(&out) != nil {
-		return ""
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		fmt.Println("askAgent: failed to decode /chat response:", err)
+		return "The clerk service had an internal problem."
 	}
 	return out.Reply
 }

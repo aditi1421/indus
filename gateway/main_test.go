@@ -177,6 +177,77 @@ func TestNormalizePhone(t *testing.T) {
 	}
 }
 
+// review finding: non-200 /chat responses (and undecodable bodies) used to
+// return "" silently, indistinguishable from a deliberate silent ignore
+// (like a 403). They should now surface a user-facing error message, and
+// log the status + a truncated body server-side.
+func TestAskAgent_NonOKStatus_ReturnsInternalProblemMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("boom: something broke upstream"))
+	}))
+	defer srv.Close()
+
+	origURL := agentURL
+	agentURL = srv.URL
+	defer func() { agentURL = origURL }()
+
+	got := askAgent("sender", "hello")
+	if got != "The clerk service had an internal problem." {
+		t.Fatalf("expected internal-problem message, got %q", got)
+	}
+}
+
+func TestAskAgent_Forbidden_ReturnsEmptySilently(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	origURL := agentURL
+	agentURL = srv.URL
+	defer func() { agentURL = origURL }()
+
+	got := askAgent("sender", "hello")
+	if got != "" {
+		t.Fatalf("expected silent empty string for 403, got %q", got)
+	}
+}
+
+func TestAskAgent_BadJSON_ReturnsInternalProblemMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	origURL := agentURL
+	agentURL = srv.URL
+	defer func() { agentURL = origURL }()
+
+	got := askAgent("sender", "hello")
+	if got != "The clerk service had an internal problem." {
+		t.Fatalf("expected internal-problem message for bad JSON, got %q", got)
+	}
+}
+
+func TestAskAgent_OK_ReturnsReply(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"Reply": "hi there"})
+	}))
+	defer srv.Close()
+
+	origURL := agentURL
+	agentURL = srv.URL
+	defer func() { agentURL = origURL }()
+
+	got := askAgent("sender", "hello")
+	if got != "hi there" {
+		t.Fatalf("expected reply from body, got %q", got)
+	}
+}
+
 func TestSendHandler_SendErrorStillReturnsOK(t *testing.T) {
 	// Behavior contract only guarantees a 400 on bad body; a downstream send
 	// error is logged, not surfaced as an HTTP failure (fire-and-forget outbound).
