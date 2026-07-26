@@ -82,3 +82,77 @@ def test_listings_for_rejects_malformed_date(monkeypatch):
     with pytest.raises(ValueError) as exc:
         cases.listings_for("24-07-2026")
     assert "YYYY-MM-DD" in str(exc.value)
+
+
+# --- Task 5b: real firm sheet is a file register, not a court-case sheet ---
+
+
+def _fake_register_sheet():
+    return pd.DataFrame({
+        "FILE": ["File No. LR(B)6/2026", "Letter No. MS/VI-768/2020/31"],
+        "DEPARTMENT": ["Law", "Education"],
+        "RECEIPT DATE": ["01/01/2026", "02/02/2026"],
+        "REMARKS": [None, "pending verification"],
+        "ASSIGNED": ["A. Bora", "C. Das"],
+        "STATUS": ["Open", "Closed"],
+    })
+
+
+def test_firm_cases_maps_register_schema(monkeypatch):
+    monkeypatch.setattr(cases, "_raw_sheet", _fake_register_sheet)
+    df = cases.firm_cases()
+    assert list(df.columns) == ["case_no", "parties", "court", "client"]
+    assert df.case_no.tolist() == ["File No. LR(B)6/2026", "Letter No. MS/VI-768/2020/31"]
+    assert df.client.tolist() == ["Law", "Education"]
+    # REMARKS was NaN for row 0 -> must become "", not the string "nan"
+    assert df.parties.tolist() == ["", "pending verification"]
+    # no court column in the real sheet -> every row defaults to mhc
+    assert df.court.tolist() == ["mhc", "mhc"]
+
+
+def test_search_token_strips_file_no_prefix():
+    assert cases.search_token("File No. LR(B)6/2026") == "LR(B)6/2026"
+
+
+def test_search_token_strips_letter_no_prefix():
+    assert cases.search_token("Letter No. MS/VI-768/2020/31") == "MS/VI-768/2020/31"
+
+
+def test_search_token_uses_first_segment_before_ampersand():
+    assert cases.search_token("File No. A & File No. B") == "A"
+
+
+def test_search_token_leaves_plain_case_no_unchanged():
+    assert cases.search_token("W.P.(C) 678/2026") == "W.P.(C) 678/2026"
+
+
+def test_listings_for_uses_search_token(monkeypatch):
+    monkeypatch.setattr(cases, "_raw_sheet", _fake_register_sheet)
+    captured = []
+
+    def fake_search(court, date, query):
+        captured.append(query)
+        return []
+
+    monkeypatch.setattr(cases, "_search", fake_search)
+    cases.listings_for("2026-07-24")
+    assert captured == ["LR(B)6/2026", "MS/VI-768/2020/31"]
+
+
+def test_firm_register_skill_shows_status_and_no_nan(monkeypatch):
+    import skills
+
+    def fake_raw_register():
+        return pd.DataFrame({
+            "FILE": ["File No. LR(B)6/2026"],
+            "DEPARTMENT": ["Law"],
+            "RECEIPT DATE": ["01/01/2026"],
+            "REMARKS": [""],
+            "ASSIGNED": ["A. Bora"],
+            "STATUS": ["Open"],
+        })
+
+    monkeypatch.setattr(cases, "raw_register", fake_raw_register)
+    out = skills.firm_register()
+    assert "Open" in out
+    assert "nan" not in out.lower()

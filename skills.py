@@ -175,6 +175,21 @@ def list_firm_cases(court: str = ""):
     return df.to_string(index=False)
 
 
+@skill
+def firm_register():
+    """The firm's full file register (FILE, DEPARTMENT, RECEIPT DATE, REMARKS,
+    ASSIGNED, STATUS -- every column, unfiltered). Use for questions about the
+    firm's file register: pending files, status, assignments, receipt dates."""
+    import cases
+    df = cases.raw_register()
+    total = len(df)
+    note = ""
+    if total > 100:
+        df = df.head(100)
+        note = f"\n(showing first 100 of {total} rows)"
+    return df.to_string(index=False) + note
+
+
 # --- billing skills (Zoho Invoice) ---
 
 
