@@ -4,9 +4,16 @@
 set -euo pipefail
 cd ~/agent
 
-sudo apt-get update && sudo apt-get install -y python3.11-venv golang-go build-essential sqlite3
+# python3.12-venv: Ubuntu 24.04 (noble) ships python3.12 as the distro python3;
+# python3.11(-venv) isn't packaged for noble, so create the venv with the distro's
+# python3 rather than pinning 3.11.
+# golang-go: noble's packaged Go is older than the toolchain pinned in go.mod, but
+# GOTOOLCHAIN=auto (the Go default since 1.21) transparently downloads and uses the
+# right toolchain on first build/test, so the older apt package is fine as a bootstrap.
+# awscli: not preinstalled on a stock Ubuntu 24.04 AMI; installed explicitly below.
+sudo apt-get update && sudo apt-get install -y python3.12-venv golang-go build-essential sqlite3 awscli
 
-python3.11 -m venv .venv
+python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
 # aides/wraps declare `requires-python >=3.14.2` in their pyproject.toml (they actually
