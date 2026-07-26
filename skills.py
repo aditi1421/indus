@@ -199,6 +199,68 @@ def firm_register():
     return df.to_string(index=False) + note
 
 
+# --- supreme court case-status skills ---
+
+
+def _sc_format(res: dict, what: str) -> str:
+    """Readable, WhatsApp-friendly summary of a sc_case_status/sc_diary_status result."""
+    import casestatus
+    if res.get("error"):
+        return f"SC lookup failed for {what}: {res['error']}"
+    if not res.get("found"):
+        return f"No Supreme Court record found for {what}."
+    results = res["results"]
+    lines = [f"Supreme Court — {len(results)} result(s) for {what}:"]
+    for r in results:
+        lines.append(
+            f"\n{r['case_number']}"
+            + (f" (registered {r['registered_on']})" if r.get("registered_on") else "")
+            + f"\nDiary: {r['diary_no']}/{r['diary_year']}"
+            f"\n{r['petitioner']} vs {r['respondent']}"
+            f"\nStatus: {r['status']}")
+    if len(results) == 1:
+        r = results[0]
+        try:
+            d = casestatus.sc_case_details(int(r["diary_no"]), int(r["diary_year"]))
+            extra = []
+            if d.get("cnr"):
+                extra.append(f"CNR: {d['cnr']}")
+            if d.get("bench"):
+                extra.append("Bench: " + ", ".join(d["bench"]))
+            if d.get("last_listed_on"):
+                extra.append(f"Last listed: {d['last_listed_on']}")
+            if d.get("status_stage"):
+                extra.append(f"Stage: {d['status_stage']}")
+            if d.get("disposal"):
+                extra.append(f"Disposal: {d['disposal']}")
+            if extra:
+                lines.append("\n" + "\n".join(extra))
+        except (ValueError, TypeError) as e:
+            lines.append(f"\n(Full details unavailable: {e})")
+    return "\n".join(lines)
+
+
+@skill
+def sc_case_status_lookup(case_type_code: int, case_number: int, year: int):
+    """Supreme Court of India case status by case number. Common case_type_code values:
+    1=SLP(C), 2=SLP(Crl), 3=Civil Appeal, 4=Criminal Appeal, 5=W.P.(C), 6=W.P.(Crl),
+    9=Review Petition (Civil). If the user implies the current year (e.g. 'this year'
+    or no year given), call current_datetime first to resolve it. Slow: solves a captcha."""
+    import casestatus
+    res = casestatus.sc_case_status(case_type_code, case_number, year)
+    return _sc_format(res, f"case {case_number}/{year} (type {case_type_code})")
+
+
+@skill
+def sc_diary_status_lookup(diary_number: int, year: int):
+    """Supreme Court of India case status by diary number (e.g. Diary 52650/2023).
+    If the user implies the current year, call current_datetime first to resolve it.
+    Slow: solves a captcha."""
+    import casestatus
+    res = casestatus.sc_diary_status(diary_number, year)
+    return _sc_format(res, f"diary {diary_number}/{year}")
+
+
 # --- billing skills (Zoho Invoice) ---
 
 
