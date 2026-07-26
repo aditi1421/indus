@@ -85,6 +85,28 @@ func senderName(pushName, senderUser string) string {
 	return senderUser
 }
 
+// normalizePhone strips '+' and whitespace from a phone number and validates
+// that only digits remain. Returns an error on empty input or any non-digit
+// character (other than the stripped '+'/whitespace).
+func normalizePhone(s string) (string, error) {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '+' || r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '-':
+			continue
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			return "", fmt.Errorf("invalid phone number %q: unexpected character %q", s, r)
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "", fmt.Errorf("invalid phone number %q: no digits found", s)
+	}
+	return out, nil
+}
+
 func sendText(text string) error {
 	sendMu.Lock()
 	defer sendMu.Unlock()
@@ -150,8 +172,83 @@ func newSendHandler(doSend func(string) error) http.HandlerFunc {
 	}
 }
 
+// runPairCode implements `-paircode <phone>`: it generates a WhatsApp
+// linking code (no QR scan needed) so the session can be paired remotely,
+// then waits for the phone to complete the pairing.
+func runPairCode(ctx context.Context, phoneArg string) {
+	phone, err := normalizePhone(phoneArg)
+	if err != nil {
+		fmt.Println("FATAL:", err)
+		os.Exit(1)
+	}
+
+	if client.Store.ID != nil {
+		fmt.Printf("already linked as %s; log out from the phone's Linked Devices first to re-pair\n", client.Store.ID)
+		os.Exit(0)
+	}
+
+	qrChan, err := client.GetQRChannel(ctx)
+	if err != nil {
+		fmt.Println("FATAL: could not get QR channel:", err)
+		os.Exit(1)
+	}
+	if err := client.Connect(); err != nil {
+		fmt.Println("FATAL: connect failed:", err)
+		os.Exit(1)
+	}
+
+	// Re-forward the QR channel onto a plain channel so we can select on it
+	// alongside a timeout.
+	items := make(chan whatsmeow.QRChannelItem)
+	go func() {
+		for evt := range qrChan {
+			items <- evt
+		}
+		close(items)
+	}()
+
+	deadline := time.After(3 * time.Minute)
+	codeRequested := false
+	for {
+		select {
+		case evt, ok := <-items:
+			if !ok {
+				fmt.Println("FATAL: pairing channel closed before completion")
+				os.Exit(1)
+			}
+			switch evt.Event {
+			case "code":
+				if codeRequested {
+					continue
+				}
+				codeRequested = true
+				code, err := client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (macOS)")
+				if err != nil {
+					fmt.Println("FATAL: PairPhone failed:", err)
+					os.Exit(1)
+				}
+				fmt.Printf("Linking code: %s\n", code)
+				fmt.Println("On the phone: WhatsApp > Settings > Linked Devices > Link a device > Link with phone number instead, then enter the code.")
+			case "success":
+				fmt.Printf("LINKED as %s\n", client.Store.ID)
+				os.Exit(0)
+			default:
+				fmt.Println("pairing status:", evt.Event)
+				if evt.Error != nil {
+					fmt.Println("FATAL:", evt.Error)
+					os.Exit(1)
+				}
+			}
+		case <-deadline:
+			fmt.Println("FATAL: timed out waiting for pairing to complete (3 minutes)")
+			os.Exit(1)
+		}
+	}
+}
+
 func main() {
 	listGroups := len(os.Args) > 1 && os.Args[1] == "-listgroups"
+	pairCode := len(os.Args) > 1 && os.Args[1] == "-paircode"
 	agentURL = env("AGENT_URL", "http://127.0.0.1:8600")
 	trigger = env("TRIGGER_PREFIX", "")
 
@@ -165,6 +262,15 @@ func main() {
 		panic(err)
 	}
 	client = whatsmeow.NewClient(device, waLog.Stdout("WA", "INFO", true))
+
+	if pairCode {
+		if len(os.Args) < 3 {
+			fmt.Println("FATAL: usage: ./gateway -paircode <phone>")
+			os.Exit(1)
+		}
+		runPairCode(ctx, os.Args[2])
+		return
+	}
 
 	if !listGroups {
 		g := env("GROUP_JID", "")

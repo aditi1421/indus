@@ -144,6 +144,39 @@ func TestSendHandler_GoodBody_InvokesSendAndReturnsOK(t *testing.T) {
 	}
 }
 
+func TestNormalizePhone(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"plus and spaces stripped", "+91 99999 99999", "919999999999", false},
+		{"already normalized", "919999999999", "919999999999", false},
+		{"garbage input errors", "abc", "", true},
+		{"empty input errors", "", "", true},
+		{"dashes and plus stripped", "+1-555-123-4567", "15551234567", false},
+		{"letters mixed in errors", "9217a80551", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := normalizePhone(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for input %q, got none (result %q)", tc.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for input %q: %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("normalizePhone(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSendHandler_SendErrorStillReturnsOK(t *testing.T) {
 	// Behavior contract only guarantees a 400 on bad body; a downstream send
 	// error is logged, not surfaced as an HTTP failure (fire-and-forget outbound).
