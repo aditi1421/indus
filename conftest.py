@@ -14,8 +14,10 @@ def _isolate_caches():
     four captcha tests pass without ever running the code under test."""
     import billing
     import casestatus
-    for mod in (billing, casestatus):
+    import mhcstatus
+    cached = (billing, casestatus, mhcstatus)
+    for mod in cached:
         mod.clear_cache()
     yield
-    for mod in (billing, casestatus):
+    for mod in cached:
         mod.clear_cache()

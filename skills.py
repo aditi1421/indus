@@ -329,6 +329,28 @@ def sc_diary_status_lookup(diary_number: int, year: int):
     return _sc_format(res, f"diary {diary_number}/{year}")
 
 
+@skill
+def mhc_case_status_lookup(case_type: str, number: int, year: int):
+    """Meghalaya High Court case status by case number. case_type is the court's own
+    code as a literal string, e.g. 'WP(C)', 'CRP', 'Cont.Cas(C)', 'AB', 'BA'. Returns
+    the parties and whether the matter is pending or disposed. Fast: no captcha cost."""
+    import mhcstatus
+    res = mhcstatus.mhc_case_status(case_type, number, year)
+    what = f"{case_type} {number}/{year}"
+    if res.get("error"):
+        return f"Meghalaya HC lookup failed for {what}: {res['error']}"
+    rows = res.get("results") or []
+    if not rows:
+        return f"No Meghalaya High Court record found for {what}."
+    lines = [f"Meghalaya High Court — {len(rows)} result(s) for {what}:"]
+    for r in rows[:10]:
+        lines.append(f"\n{r['case_no']}\n{r['petitioner']} vs {r['respondent']}"
+                     f"\nStatus: {r['status']}")
+    if len(rows) > 10:
+        lines.append(f"\n…and {len(rows) - 10} more")
+    return _cite("\n".join(lines), f"meghalayahighcourt.nic.in case status, {what}")
+
+
 # --- billing skills (Zoho Invoice) ---
 
 
