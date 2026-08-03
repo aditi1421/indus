@@ -1,4 +1,6 @@
+import functools
 import os, json
+import re
 from pathlib import Path
 
 import requests
@@ -27,9 +29,42 @@ def _cite(text, source):
     return f"{text}\n[source: {source}]"
 
 
+# Tool results are fed straight back into the model, so their size is a running
+# cost on every turn of the agent loop, not just on what server.py persists.
+# firm_register can return 100 spreadsheet rows in one result; unbounded, that
+# is the case where a single question quietly costs more than a hundred normal
+# ones. 4,000 characters is roughly 1,000 tokens: enough for a cause list or a
+# billing profile, and a hard ceiling on the pathological case.
+MAX_TOOL_RESULT_CHARS = 4000
+_CAP_NOTE = ("\n[truncated at {n} characters — narrow the query "
+             "(add a filter, a date, or a name) to see more]")
+_SOURCE_TAG = re.compile(r"\n\[source: [^\]]*\]\s*$")
+
+
+def _cap(text, limit=MAX_TOOL_RESULT_CHARS):
+    """Bound one tool result, keeping its source tag.
+
+    The citation is appended last, so a naive truncation would cut it off and
+    the answer would silently lose its provenance — which is the one thing the
+    persona promises. Trim the body instead and re-attach the tag.
+    """
+    if not isinstance(text, str) or len(text) <= limit:
+        return text
+    match = _SOURCE_TAG.search(text)
+    source = match.group(0) if match else ""
+    body = text[:match.start()] if match else text
+    note = _CAP_NOTE.format(n=limit)
+    keep = max(0, limit - len(source) - len(note))
+    return body[:keep] + note + source
+
+
 def skill(fn):
-    SKILLS.append(function_tool(failure_error_function=lambda c, e: str(e))(fn))
-    return fn
+    @functools.wraps(fn)
+    def capped(*args, **kwargs):
+        return _cap(fn(*args, **kwargs))
+
+    SKILLS.append(function_tool(failure_error_function=lambda c, e: str(e))(capped))
+    return capped
 
 
 MANIFEST = Path(os.getenv("INDUS_MANIFEST", "./manifest.json")).resolve()
