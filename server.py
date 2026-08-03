@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+import provenance
+
 HIST_DIR = Path(".cache/history")
 HIST_DIR.mkdir(parents=True, exist_ok=True)
 MAX_HISTORY = 60
@@ -75,11 +77,13 @@ def chat(m: ChatIn):
     with _LOCK:
         hf = HIST_DIR / "group.json"
         hist = _load_history(hf) if hf.is_file() else []
+        provenance.start(chat=m.chat, sender=m.sender, question=m.text)
         try:
             reply, hist = _ask(prompt, hist)
         except Exception as e:
             print(f"[server] _ask failed: {e!r}")
             if not hist:
+                provenance.clear()
                 return {"reply": _APOLOGY}
             # The persisted history itself may be the poison (a stranded
             # tool item that makes the Responses API 400 on every request).
@@ -88,7 +92,9 @@ def chat(m: ChatIn):
                 reply, hist = _ask(prompt, [])
             except Exception as e2:
                 print(f"[server] retry with empty history also failed: {e2!r}")
+                provenance.clear()
                 return {"reply": _APOLOGY}
+        provenance.finish(reply)
         _save_history(hf, _trim_history(hist))
     return {"reply": reply}
 
