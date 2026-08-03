@@ -10,6 +10,13 @@ import provenance
 HIST_DIR = Path(".cache/history")
 HIST_DIR.mkdir(parents=True, exist_ok=True)
 MAX_HISTORY = 60
+# Item count is a poor proxy for cost: history is resent in full on every
+# message. firm_register alone can return 100 spreadsheet rows, which would
+# then ride along on the next 60 messages. Bound the total, and cut any single
+# oversized item down before it is persisted.
+MAX_HISTORY_CHARS = 12000
+MAX_ITEM_CHARS = 2000
+_TRUNCATED = "\n[...truncated to keep the resent history small]"
 _LOCK = threading.Lock()
 
 app = FastAPI(title="indus-clerk")
@@ -42,7 +49,17 @@ def _save_history(hf, hist):
     tmp.replace(hf)
 
 
-def _trim_history(hist, max_items=MAX_HISTORY):
+def _truncate_item(item):
+    """Shrink one oversized item, leaving everything else untouched."""
+    out = dict(item)
+    for key in ("output", "content"):
+        value = out.get(key)
+        if isinstance(value, str) and len(value) > MAX_ITEM_CHARS:
+            out[key] = value[:MAX_ITEM_CHARS] + _TRUNCATED
+    return out
+
+
+def _trim_history(hist, max_items=MAX_HISTORY, max_chars=MAX_HISTORY_CHARS):
     """Slice to the last max_items, then drop leading items that aren't a
     plain message.
 
@@ -54,7 +71,19 @@ def _trim_history(hist, max_items=MAX_HISTORY):
     persisted history: the Responses API 400s on it forever. Be defensive —
     anything without a role in our known set is treated as droppable.
     """
-    trimmed = list(hist[-max_items:] if max_items else hist)
+    trimmed = [_truncate_item(i) for i in (hist[-max_items:] if max_items else hist)]
+
+    if max_chars:
+        kept, used = [], 0
+        for item in reversed(trimmed):
+            size = len(json.dumps(item))
+            if kept and used + size > max_chars:
+                break
+            kept.append(item)
+            used += size
+        kept.reverse()
+        trimmed = kept
+
     while trimmed and trimmed[0].get("role") not in ("user", "assistant", "system", "developer"):
         trimmed.pop(0)
     return trimmed

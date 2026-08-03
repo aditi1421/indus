@@ -230,8 +230,8 @@ def _run_search(action, page_path, form_fields, *, max_captcha_retries, solve) -
             "error": f"could not solve captcha after {max_captcha_retries} tries"}
 
 
-def sc_case_status(case_type: int, number: int, year: int, *,
-                   max_captcha_retries: int = 5, solve=None) -> dict:
+def _sc_case_status_uncached(case_type: int, number: int, year: int, *,
+                             max_captcha_retries: int = 5, solve=None) -> dict:
     """Search SC by Case Number (action=get_case_status_case_no).
     Returns {"found": bool, "results": [{serial, diary_no, diary_year, case_number,
     registered_on, petitioner, respondent, status}...], "error": str|None}."""
@@ -241,13 +241,52 @@ def sc_case_status(case_type: int, number: int, year: int, *,
         max_captcha_retries=max_captcha_retries, solve=solve)
 
 
-def sc_diary_status(diary_no: int, year: int, *,
-                    max_captcha_retries: int = 5, solve=None) -> dict:
+def _sc_diary_status_uncached(diary_no: int, year: int, *,
+                              max_captcha_retries: int = 5, solve=None) -> dict:
     """Search SC by Diary Number (action=get_case_status_diary_no). Same return shape."""
     return _run_search(
         "get_case_status_diary_no", DIARY_NO_PAGE,
         {"diary_no": str(diary_no), "year": str(year)},
         max_captcha_retries=max_captcha_retries, solve=solve)
+
+
+# --- caching ---
+#
+# Every status lookup costs a vision call per captcha attempt, plus retries, and
+# is the slowest thing the bot does. A case's status does not change hour to
+# hour, so repeat lookups of the same case are served from memory for a day.
+# Failures are never cached: caching an outage would keep serving it after the
+# portal recovered.
+
+CACHE_TTL_SECONDS = 24 * 3600
+_CACHE = {}
+
+
+def clear_cache():
+    _CACHE.clear()
+
+
+def _cached(key, fetch):
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and now - hit[0] < CACHE_TTL_SECONDS:
+        return hit[1]
+    result = fetch()
+    if isinstance(result, dict) and not result.get("error"):
+        _CACHE[key] = (now, result)
+    return result
+
+
+def sc_case_status(case_type: int, number: int, year: int, **kw) -> dict:
+    """Search SC by Case Number, cached for a day. See _sc_case_status_uncached."""
+    return _cached(("case", case_type, number, year),
+                   lambda: _sc_case_status_uncached(case_type, number, year, **kw))
+
+
+def sc_diary_status(diary_no: int, year: int, **kw) -> dict:
+    """Search SC by Diary Number, cached for a day. See _sc_diary_status_uncached."""
+    return _cached(("diary", diary_no, year),
+                   lambda: _sc_diary_status_uncached(diary_no, year, **kw))
 
 
 # --- drill-down (no captcha) ---

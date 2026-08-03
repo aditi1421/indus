@@ -42,6 +42,13 @@ def record(source):
         current["sources"].append(source)
 
 
+def set_usage(usage):
+    """Attach the model's reported token usage to this request's record."""
+    current = _CURRENT.get()
+    if current is not None:
+        current["usage"] = usage
+
+
 def sources():
     current = _CURRENT.get()
     return list(current["sources"]) if current else []
