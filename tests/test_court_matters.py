@@ -16,6 +16,13 @@ import pytest
 import cases
 
 
+@pytest.fixture(autouse=True)
+def _no_sc_terms(monkeypatch):
+    """Most tests care about the tab; the configured Supreme Court term is
+    opted into explicitly so it cannot quietly satisfy an assertion."""
+    monkeypatch.setattr(cases, "_sc_terms", lambda: [])
+
+
 @pytest.fixture
 def matters(monkeypatch):
     tab = pd.DataFrame([
@@ -50,14 +57,38 @@ def test_rows_with_neither_identifier_are_dropped(monkeypatch):
     assert cases.court_matters() == []
 
 
-def test_a_missing_tab_is_reported_not_silently_empty(monkeypatch):
+def test_a_missing_tab_leaves_the_configured_court_terms_working(monkeypatch):
+    """The tab is optional. Losing it must not cost Supreme Court coverage."""
     def missing():
         raise ValueError("no such tab")
 
     monkeypatch.setattr(cases, "_matters_tab", missing)
+    monkeypatch.setattr(cases, "_sc_terms", lambda: ["AVIJIT MANI"])
 
-    with pytest.raises(ValueError, match="COURT MATTERS"):
-        cases.court_matters()
+    rows = cases.court_matters()
+
+    assert [r["token"] for r in rows] == ["AVIJIT MANI"]
+    assert rows[0]["court"] == "sc"
+
+
+def test_a_tab_that_is_really_the_register_is_ignored_not_misread(monkeypatch):
+    """Google serves the first tab when the named one is absent, so a sheet with
+    no COURT column means "no tab", never "read the register as matters"."""
+    monkeypatch.setattr(cases, "_matters_tab", lambda: pd.DataFrame(
+        [{"FILE": "File No. LJ(B)57/2024", "DEPARTMENT": "Education"}]))
+    monkeypatch.setattr(cases, "_sc_terms", lambda: ["AVIJIT MANI"])
+
+    assert [r["token"] for r in cases.court_matters()] == ["AVIJIT MANI"]
+
+
+def test_the_configured_term_and_the_tab_are_combined(monkeypatch):
+    monkeypatch.setattr(cases, "_matters_tab", lambda: pd.DataFrame(
+        [{"COURT": "mhc", "CASE NO": "WP(C)/348/2026", "PARTIES": "Dhar", "AOR CODE": ""}]))
+    monkeypatch.setattr(cases, "_sc_terms", lambda: ["AVIJIT MANI"])
+
+    rows = cases.court_matters()
+
+    assert {r["court"] for r in rows} == {"sc", "mhc"}
 
 
 # --- the dangerous bug: unavailable must never read as nothing listed ---

@@ -16,6 +16,7 @@ KEYS = {
     "zoho_refresh": f"{APP}/zoho_refresh",
     "zoho_org": f"{APP}/zoho_org",
     "group_jid": f"{APP}/whatsapp_group",
+    "sc_search_terms": f"{APP}/sc_search_terms",
 }
 
 
@@ -32,6 +33,7 @@ class Config:
     zoho_refresh: str
     zoho_org: str
     group_jid: str
+    sc_search_terms: str
 
     @classmethod
     def load(cls):
