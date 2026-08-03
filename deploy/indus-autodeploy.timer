@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a new Indus Bot release every few minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+# Spread the polls so every box doesn't hit GitHub on the same second.
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target
