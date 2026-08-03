@@ -135,9 +135,17 @@ def test_recent_invoices_says_so_when_there_is_no_history(monkeypatch):
 
 
 class _CaptureDraft:
+    """No billing history, so the duplicate guard finds nothing to object to."""
+
     def __init__(self):
         self.customer_id = None
         self.items = None
+
+    def invoices(self, customer_id="", limit=10):
+        return []
+
+    def invoice(self, invoice_id):
+        return {}
 
     def create_draft(self, customer_id, items):
         self.customer_id, self.items = customer_id, items
