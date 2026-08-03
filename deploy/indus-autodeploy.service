@@ -1,0 +1,11 @@
+[Unit]
+Description=Indus Bot auto-deploy (pull main, test, restart, roll back on failure)
+After=network-online.target indus-agent.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agent
+ExecStart=/home/ubuntu/agent/deploy/autodeploy.sh
+# A deploy that hangs must not wedge the timer forever.
+TimeoutStartSec=600
