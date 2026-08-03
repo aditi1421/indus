@@ -260,16 +260,38 @@ def search_causelist(court: str, date: str, query: str):
 
 @skill
 def todays_causelist_matches(date: str):
-    """Firm matters listed on a date (YYYY-MM-DD) across SC, Delhi HC, Meghalaya HC. Use for 'what's listed today/tomorrow'."""
+    """Firm matters listed on a date (YYYY-MM-DD) across SC, Delhi HC, Meghalaya HC.
+    Use for "what's listed today/tomorrow". States explicitly when a court's list could
+    not be read, which is NOT the same as nothing being listed."""
     import cases
-    rows = cases.listings_for(date)
-    if not rows:
-        return f"No firm matters found in published cause lists for {date}."
-    lines = []
-    for r in rows:
-        lines.append(f"• {r['case_no']} ({r['client']}) — {r['court'].upper()}\n{r['matches'][0]}")
-    return _cite(f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n\n".join(lines),
-                 f"SC, Delhi HC and Meghalaya HC cause lists, {date}")
+    result = cases.listings_for(date)
+    rows, checked, unavailable = result["rows"], result["checked"], result["unavailable"]
+    names = {"sc": "Supreme Court", "dhc": "Delhi High Court", "mhc": "Meghalaya High Court"}
+
+    def label(courts):
+        return ", ".join(names.get(c, c) for c in courts)
+
+    # Nothing could be read, so nothing can be claimed. Saying "no matters
+    # listed" here is the failure that costs someone a hearing.
+    if not checked:
+        return (f"Could not check {date}: no cause list was available for "
+                f"{label(unavailable) or 'any court'}. That is not the same as nothing "
+                f"being listed — the lists themselves could not be read.")
+
+    if rows:
+        lines = []
+        for r in rows:
+            who = f" ({r['parties']})" if r.get("parties") else ""
+            lines.append(f"• {r['token']}{who} — {r['court'].upper()}\n{r['matches'][0]}")
+        body = f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n\n".join(lines)
+    else:
+        body = (f"No firm matters in the cause lists I could read for {date} "
+                f"({label(checked)}).")
+
+    if unavailable:
+        body += (f"\n\nCould not check {label(unavailable)}: no list was available "
+                 f"for {date}.")
+    return _cite(body, f"cause lists for {label(checked)}, {date}")
 
 
 @skill

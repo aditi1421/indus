@@ -19,8 +19,17 @@ def test_firm_cases_normalizes(monkeypatch):
     assert df.court.tolist() == ["dhc", "sc"]
 
 
+def _fake_matters_tab():
+    return pd.DataFrame({
+        "COURT": ["DHC", "SC"],
+        "CASE NO": ["W.P.(C) 678/2026", "SLP(C) 12345/2025"],
+        "PARTIES": ["Acme Infra", "Beta Corp"],
+        "AOR CODE": ["", ""],
+    })
+
+
 def test_listings_for_matches_only_listed(monkeypatch):
-    monkeypatch.setattr(cases, "_raw_sheet", _fake_sheet)
+    monkeypatch.setattr(cases, "_matters_tab", _fake_matters_tab)
     monkeypatch.setattr(cases, "_fetch", lambda court, date: None)
 
     def fake_search(court, date, query):
@@ -30,9 +39,10 @@ def test_listings_for_matches_only_listed(monkeypatch):
 
     monkeypatch.setattr(cases, "_search", fake_search)
     out = cases.listings_for("2026-07-24")
-    assert len(out) == 1
-    assert out[0]["client"] == "Acme Infra"
-    assert out[0]["matches"][0].startswith("2.")
+    assert len(out["rows"]) == 1
+    assert out["rows"][0]["parties"] == "Acme Infra"
+    assert out["rows"][0]["matches"][0].startswith("2.")
+    assert out["unavailable"] == []
 
 
 def _fake_sheet_with_court_fee():
@@ -152,8 +162,17 @@ def test_search_token_leaves_plain_case_no_unchanged():
     assert cases.search_token("W.P.(C) 678/2026") == "W.P.(C) 678/2026"
 
 
-def test_listings_for_uses_search_token(monkeypatch):
-    monkeypatch.setattr(cases, "_raw_sheet", _fake_register_sheet)
+def _fake_matters_tab_two_rows():
+    return pd.DataFrame({
+        "COURT": ["MHC", "MHC"],
+        "CASE NO": ["LR(B)6/2026", "MS/VI-768/2020/31"],
+        "PARTIES": ["A Vs B", "C Vs D"],
+        "AOR CODE": ["", ""],
+    })
+
+
+def test_listings_for_searches_each_matters_token(monkeypatch):
+    monkeypatch.setattr(cases, "_matters_tab", _fake_matters_tab_two_rows)
     monkeypatch.setattr(cases, "_fetch", lambda court, date: None)
     captured = []
 
@@ -174,15 +193,15 @@ def test_listings_for_uses_search_token(monkeypatch):
 
 def _fake_sheet_five_mhc_rows():
     return pd.DataFrame({
-        "Case No": [f"WP(C) {i}/2026" for i in range(5)],
-        "Parties": ["A Vs B"] * 5,
-        "Court": ["MHC"] * 5,
-        "Client": [f"Client{i}" for i in range(5)],
+        "COURT": ["MHC"] * 5,
+        "CASE NO": [f"WP(C) {i}/2026" for i in range(5)],
+        "PARTIES": ["A Vs B"] * 5,
+        "AOR CODE": [""] * 5,
     })
 
 
 def test_listings_for_resolves_court_once_and_skips_unavailable_rows(monkeypatch):
-    monkeypatch.setattr(cases, "_raw_sheet", _fake_sheet_five_mhc_rows)
+    monkeypatch.setattr(cases, "_matters_tab", _fake_sheet_five_mhc_rows)
 
     fetch_calls = []
 
@@ -197,7 +216,8 @@ def test_listings_for_resolves_court_once_and_skips_unavailable_rows(monkeypatch
     monkeypatch.setattr(cases, "_search", fake_search)
 
     out = cases.listings_for("2026-07-24")
-    assert out == []
+    assert out["rows"] == []
+    assert out["unavailable"] == ["mhc"]  # named, not silently treated as nil
     assert fetch_calls == ["mhc"]  # exactly one call despite 5 rows
 
 
