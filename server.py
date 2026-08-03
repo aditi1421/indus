@@ -10,7 +10,7 @@ HIST_DIR.mkdir(parents=True, exist_ok=True)
 MAX_HISTORY = 60
 _LOCK = threading.Lock()
 
-app = FastAPI(title="nyaya-clerk")
+app = FastAPI(title="indus-clerk")
 
 
 def _group() -> str:

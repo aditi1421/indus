@@ -1,5 +1,5 @@
 [Unit]
-Description=Nyaya clerk agent (FastAPI)
+Description=Indus clerk agent (FastAPI)
 After=network-online.target
 
 [Service]
