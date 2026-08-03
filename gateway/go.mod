@@ -1,4 +1,4 @@
-module nyaya/gateway
+module indus/gateway
 
 go 1.26.5
 

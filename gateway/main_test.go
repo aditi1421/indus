@@ -26,7 +26,7 @@ func TestMatchTrigger_EmptyMessage(t *testing.T) {
 }
 
 func TestMatchTrigger_PrefixMatchStripsAndTrims(t *testing.T) {
-	text, ok := matchTrigger("@nyaya what can you do?", "@nyaya")
+	text, ok := matchTrigger("@indus what can you do?", "@indus")
 	if !ok {
 		t.Fatalf("expected ok=true when prefix matches")
 	}
@@ -36,7 +36,7 @@ func TestMatchTrigger_PrefixMatchStripsAndTrims(t *testing.T) {
 }
 
 func TestMatchTrigger_PrefixCaseInsensitive(t *testing.T) {
-	text, ok := matchTrigger("@NYAYA hello", "@nyaya")
+	text, ok := matchTrigger("@INDUS hello", "@indus")
 	if !ok {
 		t.Fatalf("expected ok=true for case-insensitive prefix match")
 	}
@@ -46,21 +46,21 @@ func TestMatchTrigger_PrefixCaseInsensitive(t *testing.T) {
 }
 
 func TestMatchTrigger_PrefixNoMatch(t *testing.T) {
-	if _, ok := matchTrigger("hello there", "@nyaya"); ok {
+	if _, ok := matchTrigger("hello there", "@indus"); ok {
 		t.Fatalf("expected ok=false when message doesn't start with prefix")
 	}
 }
 
 func TestMatchTrigger_PrefixWithoutBoundary(t *testing.T) {
-	// "@nyaya" should NOT match "@Nyayafoo hi" (no word boundary)
-	if _, ok := matchTrigger("@Nyayafoo hi", "@nyaya"); ok {
+	// "@indus" should NOT match "@Indusfoo hi" (no word boundary)
+	if _, ok := matchTrigger("@Indusfoo hi", "@indus"); ok {
 		t.Fatalf("expected ok=false when prefix has no word boundary")
 	}
 }
 
 func TestMatchTrigger_PrefixAlone(t *testing.T) {
-	// "@nyaya" alone (with no following text) should match and return empty string
-	text, ok := matchTrigger("@nyaya", "@nyaya")
+	// "@indus" alone (with no following text) should match and return empty string
+	text, ok := matchTrigger("@indus", "@indus")
 	if !ok {
 		t.Fatalf("expected ok=true for prefix alone")
 	}
@@ -70,8 +70,8 @@ func TestMatchTrigger_PrefixAlone(t *testing.T) {
 }
 
 func TestMatchTrigger_PrefixWithSpace(t *testing.T) {
-	// "@nyaya " (with trailing space) should match and return empty string
-	text, ok := matchTrigger("@nyaya ", "@nyaya")
+	// "@indus " (with trailing space) should match and return empty string
+	text, ok := matchTrigger("@indus ", "@indus")
 	if !ok {
 		t.Fatalf("expected ok=true for prefix with space")
 	}

@@ -19,11 +19,11 @@ def test_manifest_tools_absent_when_manifest_missing():
 def test_manifest_tools_registered_when_manifest_present(tmp_path, monkeypatch):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"sources": []}))
-    monkeypatch.setenv("NYAYA_MANIFEST", str(manifest))
+    monkeypatch.setenv("INDUS_MANIFEST", str(manifest))
     try:
         importlib.reload(skills)
         names = {s.name for s in skills.SKILLS}
         assert MANIFEST_TOOL_NAMES <= names
     finally:
-        monkeypatch.delenv("NYAYA_MANIFEST", raising=False)
+        monkeypatch.delenv("INDUS_MANIFEST", raising=False)
         importlib.reload(skills)  # restore module to its manifest-less state
