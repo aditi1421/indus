@@ -31,9 +31,78 @@ COURT_ALIASES = {"sc": "sc", "supreme": "sc", "dhc": "dhc", "delhi": "dhc",
 _PREFIX_RE = re.compile(r"^\s*(?:file|letter)\s*no\.?:?\s*", re.IGNORECASE)
 
 
+MATTERS_TAB = "COURT MATTERS"
+
+
 def _raw_sheet() -> pd.DataFrame:
     from config import get_cfg
     return aides.read_gsheet(get_cfg().sheet_indus)
+
+
+def _matters_tab() -> pd.DataFrame:
+    """The firm's court matters tab, read by name rather than by gid so the
+    firm can move it around without anything breaking."""
+    from urllib.parse import quote
+    from config import get_cfg
+    url = (f"https://docs.google.com/spreadsheets/d/{get_cfg().sheet_indus}"
+           f"/gviz/tq?tqx=out:csv&sheet={quote(MATTERS_TAB)}")
+    return pd.read_csv(url)
+
+
+def _first_col(columns, *names):
+    lookup = {str(c).strip().lower(): c for c in columns}
+    for name in names:
+        if name in lookup:
+            return lookup[name]
+    return None
+
+
+def _cell(row, col):
+    if not col:
+        return ""
+    value = str(row.get(col, "") or "").strip()
+    return "" if value.lower() == "nan" else value
+
+
+def court_matters() -> list[dict]:
+    """The firm's court matters, each with the token to search a cause list for.
+
+    The government file register cannot serve this purpose: it holds FILE and
+    letter numbers ("File No. LJ(B)57/2024"), while cause lists carry court
+    case numbers. Matching one against the other can never hit, which is why
+    the bot reported nothing listed every day until 2026-08-04.
+
+    A row is searched by its case number, or by its AOR code when it has none.
+    One Supreme Court row keyed on an AOR code therefore covers every matter
+    that advocate is on, including ones filed since the sheet was last edited.
+    """
+    try:
+        df = _matters_tab()
+    except Exception as e:
+        raise ValueError(
+            f"Could not read the '{MATTERS_TAB}' tab of the firm sheet: {e}")
+
+    court_col = _first_col(df.columns, "court")
+    if not court_col:
+        raise ValueError(f"The '{MATTERS_TAB}' tab needs a COURT column; "
+                         f"found {list(df.columns)}")
+    case_col = _first_col(df.columns, "case no", "case_no", "case number", "case")
+    parties_col = _first_col(df.columns, "parties", "party")
+    aor_col = _first_col(df.columns, "aor code", "aor", "aor_code")
+
+    out = []
+    for _, row in df.iterrows():
+        court = _cell(row, court_col).lower()
+        court = next((v for k, v in COURT_ALIASES.items() if k in court), court)
+        if court not in ("sc", "dhc", "mhc"):
+            continue
+        case_no, aor = _cell(row, case_col), _cell(row, aor_col)
+        token = case_no or aor
+        if not token:
+            continue  # nothing to search for; a row like this is just a note
+        out.append({"court": court, "token": token, "case_no": case_no,
+                    "aor": aor, "parties": _cell(row, parties_col)})
+    return out
 
 
 def _search(court, date, query):
@@ -147,34 +216,38 @@ def firm_cases() -> pd.DataFrame:
     return df[["case_no", "parties", "court", "client"]].reset_index(drop=True)
 
 
-def listings_for(date: str) -> list[dict]:
+def listings_for(date: str) -> dict:
+    """{"rows": [...], "checked": [courts], "unavailable": [courts]}.
+
+    The availability of each court's list is part of the answer, not an
+    internal detail. Without it, a source outage is indistinguishable from
+    "nothing is listed" — the failure most likely to cost someone a hearing.
+    """
     try:
         datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
         raise ValueError(f"date must be YYYY-MM-DD, got {date!r}")
-    df = firm_cases()
 
-    # Resolve availability for each DISTINCT court once up front. A register
-    # with many rows for the same court (the common case: everything defaults
-    # to "mhc") must not trigger the expensive scrape/paid-browser-fallback
-    # path once per row -- at most once per court per call.
-    unavailable = set()
-    for court in df.court.unique():
-        if court not in ("sc", "dhc", "mhc"):
-            continue
+    matters = court_matters()
+
+    # Resolve availability once per court, not once per matter: the fallback
+    # path is slow and, for the browser fallback, paid.
+    checked, unavailable = [], []
+    for court in sorted({m["court"] for m in matters}):
         try:
             _fetch(court, date)
+            checked.append(court)
         except ValueError:
-            unavailable.add(court)
+            unavailable.append(court)
 
-    out = []
-    for _, row in df.iterrows():
-        if row.court not in ("sc", "dhc", "mhc") or row.court in unavailable:
+    rows = []
+    for matter in matters:
+        if matter["court"] in unavailable:
             continue
         try:
-            matches = _search(row.court, date, search_token(row.case_no))
+            matches = _search(matter["court"], date, matter["token"])
         except ValueError:
-            continue  # list not published for this court/date
+            continue
         if matches:
-            out.append({**row.to_dict(), "matches": matches})
-    return out
+            rows.append({**matter, "matches": matches})
+    return {"rows": rows, "checked": checked, "unavailable": unavailable}
