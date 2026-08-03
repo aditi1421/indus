@@ -17,7 +17,11 @@ from pathlib import Path
 
 CACHE = Path(os.getenv("INDUS_CACHE", "./.cache")).resolve()
 NOTES = CACHE / "notes.json"
-MAX_BLOCK_CHARS = 4000
+# Deliberately small. Measured 2026-08-03, the fixed per-request overhead is
+# already ~1,648 tokens (persona 643 + tool schemas 1,004). A 4,000 character
+# note block would add another ~1,000 tokens to every single request to carry
+# facts most questions never need.
+MAX_BLOCK_CHARS = 1500
 
 _LOCK = threading.Lock()
 

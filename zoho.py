@@ -42,10 +42,27 @@ class Zoho:
         params = {"contact_name_contains": search} if search else {}
         return self._req("GET", "/contacts", params=params).get("contacts", [])
 
+    def invoices(self, customer_id="", limit=10):
+        """Recent invoices, newest first, optionally for one customer."""
+        params = {"per_page": limit, "sort_column": "date", "sort_order": "D"}
+        if customer_id:
+            params["customer_id"] = customer_id
+        return self._req("GET", "/invoices", params=params).get("invoices", [])
+
+    def invoice(self, invoice_id):
+        """One invoice including its line items; the list endpoint omits them."""
+        return self._req("GET", f"/invoices/{invoice_id}")["invoice"]
+
     def create_draft(self, customer_id, items):
-        payload = {"customer_id": customer_id,
-                   "line_items": [{"name": i["name"], "rate": i["rate"],
-                                   "quantity": i.get("quantity", 1)} for i in items]}
+        line_items = []
+        for i in items:
+            li = {"name": i["name"], "rate": i["rate"], "quantity": i.get("quantity", 1)}
+            # The firm's house format carries the real detail (hearing date, case
+            # number, cause title) in description; name is just the heading.
+            if i.get("description"):
+                li["description"] = i["description"]
+            line_items.append(li)
+        payload = {"customer_id": customer_id, "line_items": line_items}
         return self._req("POST", "/invoices", json=payload)["invoice"]
 
     def email_invoice(self, invoice_id):

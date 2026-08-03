@@ -100,3 +100,52 @@ def test_stored_file_is_valid_json(store):
     notes.add("a note")
 
     assert isinstance(json.loads(store.read_text()), list)
+
+
+# --- the skills the lawyers actually call ---
+
+
+def test_remember_note_confirms_what_it_saved(store):
+    import skills
+
+    out = skills.remember_note("MeECL means Meghalaya Energy Corporation Limited", taught_by="Aditi")
+
+    assert "MeECL means Meghalaya Energy Corporation Limited" in out
+    assert [n["text"] for n in notes.load()] == [
+        "MeECL means Meghalaya Energy Corporation Limited"]
+
+
+def test_list_notes_shows_the_id_and_who_taught_it(store):
+    import skills
+
+    skills.remember_note("PWD means Public Works Department", taught_by="Aditi")
+
+    out = skills.list_notes()
+    assert "PWD means Public Works Department" in out
+    assert "Aditi" in out
+
+
+def test_list_notes_says_so_when_nothing_taught(store):
+    import skills
+
+    assert "nothing" in skills.list_notes().lower()
+
+
+def test_forget_note_removes_it(store):
+    import skills
+
+    note = notes.add("temporary")
+
+    out = skills.forget_note(note["id"])
+
+    assert notes.load() == []
+    assert "forgot" in out.lower() or "removed" in out.lower()
+
+
+def test_forget_note_reports_an_unknown_id(store):
+    import skills
+
+    out = skills.forget_note("999")
+
+    assert "999" in out
+    assert "no note" in out.lower()

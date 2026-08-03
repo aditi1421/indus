@@ -6,6 +6,8 @@ import pandas as pd
 from agents import function_tool
 import aides
 
+import notes
+
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 240)
 
@@ -133,6 +135,39 @@ def read_source(source_id: str, max_chars: int = 20000):
 if MANIFEST.is_file():
     for _fn in (list_sources, describe_source, query_table, read_source):
         skill(_fn)
+
+
+# --- taught notes ---
+
+
+@skill
+def remember_note(text: str, taught_by: str = ""):
+    """Permanently remember a fact the firm tells you, e.g. 'MeECL means Meghalaya
+    Energy Corporation Limited'. Call this ONLY when someone explicitly asks you to
+    remember something. taught_by is the name of the person who said it."""
+    n = notes.add(text.strip(), added_by=taught_by.strip())
+    return f"Noted [{n['id']}]: {n['text']}"
+
+
+@skill
+def list_notes():
+    """Everything the firm has taught you, with who taught it and when."""
+    items = notes.load()
+    if not items:
+        return "Nothing has been taught to me yet."
+    return "\n".join(
+        f"[{n['id']}] {n['text']}"
+        + (f" (taught by {n['added_by']}" + f", {n['added_at'][:10]})" if n.get("added_by")
+           else f" ({n.get('added_at', '')[:10]})")
+        for n in items)
+
+
+@skill
+def forget_note(note_id: str):
+    """Remove one taught note by its id. Use list_notes first to find the id."""
+    if notes.remove(note_id):
+        return f"Forgot note [{note_id}]."
+    return f"There is no note [{note_id}]."
 
 
 @skill
@@ -279,6 +314,69 @@ def zoho_find_customer(name: str):
     if not hits:
         return f"No Zoho customer matching '{name}'."
     return "\n".join(f"{c['contact_id']} | {c['contact_name']}" for c in hits[:10])
+
+
+@skill
+def zoho_recent_invoices(customer_id: str, limit: int = 5):
+    """A customer's recent invoices with their line items, rates and wording. Call this
+    BEFORE raising a new invoice so the draft matches the firm's established format and
+    that customer's standing rate. Also answers 'what did we last charge X'."""
+    z = _zoho()
+    recent = z.invoices(customer_id=customer_id, limit=limit)
+    if not recent:
+        return f"No invoice history for customer {customer_id}."
+    out = []
+    for inv in recent:
+        full = z.invoice(inv["invoice_id"])
+        total = full.get("total")
+        total_txt = f"₹{total:.2f}" if isinstance(total, (int, float)) else "?"
+        head = (f"{full.get('invoice_number', '?')} | {full.get('date', '?')} | "
+                f"{full.get('status', '?')} | total {total_txt}")
+        lines = [f"  • {li.get('name', '')} | {li.get('description', '')} | "
+                 f"rate {li.get('rate')} x {li.get('quantity')}"
+                 for li in full.get("line_items", [])]
+        out.append("\n".join([head] + lines))
+    return f"Last {len(out)} invoice(s):\n\n" + "\n\n".join(out)
+
+
+# The firm's house format, measured from the live account on 2026-08-03. Every
+# appearance invoice is these exact two lines, so build them here rather than
+# asking the model to assemble line items freehand: the template can't drift,
+# and the clerkage arithmetic isn't left to a language model.
+APPEARANCE_HEADING = "Appearance & Arguments"
+CLERKAGE_HEADING = "Clerkage"  # historical invoices misspell this "Clearkage"
+DEFAULT_COURT = "Meghalaya High Court at Shillong"
+
+
+@skill
+def zoho_create_appearance_invoice(customer_id: str, hearing_date: str, case_number: str,
+                                   cause_title: str, fee: float,
+                                   court: str = DEFAULT_COURT, clerkage_pct: float = 10):
+    """Create a DRAFT appearance invoice in the firm's house format: an
+    'Appearance & Arguments' line plus a clerkage line at clerkage_pct of the fee.
+    hearing_date is YYYY-MM-DD. cause_title is the full cause title, e.g.
+    'M/S Kamakshi Ispat Ltd. Vs. Meghalaya Power Distribution Corporation Ltd. & Ors.'.
+    Use zoho_recent_invoices first to find that customer's standing fee. NOT sent to anyone."""
+    from datetime import datetime
+    try:
+        day = datetime.strptime(hearing_date.strip(), "%Y-%m-%d")
+    except (ValueError, AttributeError):
+        raise ValueError(f"hearing_date must be YYYY-MM-DD, got {hearing_date!r}")
+
+    description = (f"Appearance and arguments on {day.strftime('%d.%m.%Y')} in "
+                   f"{case_number} titled as {cause_title} before {court}.")
+    clerkage = round(fee * clerkage_pct / 100.0, 2)
+    items = [
+        {"name": APPEARANCE_HEADING, "description": description, "rate": fee, "quantity": 1},
+        {"name": CLERKAGE_HEADING, "description": f"@ {clerkage_pct:g}%",
+         "rate": clerkage, "quantity": 1},
+    ]
+    inv = _zoho().create_draft(customer_id, items)
+    total = inv.get("total")
+    total_txt = f"₹{total:.2f}" if isinstance(total, (int, float)) else "amount unavailable"
+    return (f"Draft created: {inv.get('invoice_number', '?')} for {total_txt} "
+            f"({APPEARANCE_HEADING} ₹{fee:g} + {CLERKAGE_HEADING} ₹{clerkage:g}, "
+            f"invoice_id={inv.get('invoice_id', '?')}). NOT sent — review it in Zoho.")
 
 
 @skill
