@@ -31,8 +31,8 @@ GROUP=$(aws ssm get-parameter --region ap-south-1 --name /apps/courts/whatsapp_g
 install -m 600 /dev/null gateway/gateway.env
 echo "GROUP_JID=${GROUP}" > gateway/gateway.env
 
-sudo cp deploy/indus-*.service deploy/indus-digest.timer /etc/systemd/system/
+sudo cp deploy/indus-*.service deploy/indus-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now indus-agent indus-gateway indus-digest.timer
+sudo systemctl enable --now indus-agent indus-gateway indus-digest.timer indus-autodeploy.timer
 echo "Done. First run: journalctl -fu indus-gateway to scan the QR (or SSH in and run"
 echo "./gateway -paircode <phone> for remote linking without a QR scan)."
