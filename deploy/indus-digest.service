@@ -1,6 +1,6 @@
 [Unit]
-Description=Nyaya morning digest
-After=nyaya-gateway.service
+Description=Indus morning digest
+After=indus-gateway.service
 
 [Service]
 Type=oneshot

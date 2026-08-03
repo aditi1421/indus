@@ -17,8 +17,8 @@ def skill(fn):
     return fn
 
 
-MANIFEST = Path(os.getenv("NYAYA_MANIFEST", "./manifest.json")).resolve()
-CACHE = Path(os.getenv("NYAYA_CACHE", "./.cache")).resolve()
+MANIFEST = Path(os.getenv("INDUS_MANIFEST", "./manifest.json")).resolve()
+CACHE = Path(os.getenv("INDUS_CACHE", "./.cache")).resolve()
 CACHE.mkdir(parents=True, exist_ok=True)
 TABULAR = {"csv", "tsv", "xlsx", "xls"}
 

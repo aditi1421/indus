@@ -1,4 +1,4 @@
-# nyaya-clerk
+# indus-clerk
 
 A WhatsApp-native clerk for the firm: post a question in the firm's WhatsApp
 group and it answers from live court cause lists, the firm's case register,
@@ -94,16 +94,16 @@ access to the bucket in `/apps/bucket`.
    `~/packages/aides` and `~/packages/wraps` (see note below), builds the Go gateway, writes
    `gateway/gateway.env` from SSM, installs the systemd units, and starts everything.
 5. Link WhatsApp — two options:
-   - **QR scan**: `journalctl -fu nyaya-gateway` and scan the code with the firm's WhatsApp
+   - **QR scan**: `journalctl -fu indus-gateway` and scan the code with the firm's WhatsApp
      (Settings > Linked Devices).
    - **Remote pairing code** (no QR/screen needed): stop the service, run
      `./gateway/gateway -paircode <bot-number>` (an 8-character code is printed; enter it on
      the phone under Settings > Linked Devices > Link with phone number instead — the code is
-     only valid for a few minutes), then restart `nyaya-gateway` once linked.
+     only valid for a few minutes), then restart `indus-gateway` once linked.
 6. Verify:
    ```bash
    curl -s localhost:8600/health          # {"ok":true}
-   systemctl status nyaya-gateway         # active (running)
+   systemctl status indus-gateway         # active (running)
    systemctl list-timers | grep digest    # next run 07:00 IST
    ```
    Then in the firm group: "What matters do we have in the Supreme Court tomorrow?" should get
@@ -123,7 +123,7 @@ directly, so they import normally without going through pip's version check.
    separate session) to print `JID | name` for every group the linked number has joined.
 2. Update the `/apps/courts/whatsapp_group` SSM parameter (region `ap-south-1`) to the new JID.
 3. Re-run `deploy/setup.sh` (or just rewrite `gateway/gateway.env` and
-   `sudo systemctl restart nyaya-gateway`).
+   `sudo systemctl restart indus-gateway`).
 
 ### Adding a court
 
