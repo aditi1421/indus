@@ -6,10 +6,24 @@ import pandas as pd
 from agents import function_tool
 import aides
 
+import notes
+import provenance
+
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 240)
 
 SKILLS = []
+
+
+def _cite(text, source):
+    """Attach the single source tag the persona promises on every grounded answer,
+    and record it so 'where did that come from' still works after the answer has
+    scrolled out of the conversation history.
+
+    Only call this when something was actually retrieved. A miss has no source.
+    """
+    provenance.record(source)
+    return f"{text}\n[source: {source}]"
 
 
 def skill(fn):
@@ -135,6 +149,54 @@ if MANIFEST.is_file():
         skill(_fn)
 
 
+# --- taught notes ---
+
+
+@skill
+def remember_note(text: str, taught_by: str = ""):
+    """Permanently remember a fact the firm tells you, e.g. 'MeECL means Meghalaya
+    Energy Corporation Limited'. Call this ONLY when someone explicitly asks you to
+    remember something. taught_by is the name of the person who said it."""
+    n = notes.add(text.strip(), added_by=taught_by.strip())
+    return f"Noted [{n['id']}]: {n['text']}"
+
+
+@skill
+def list_notes():
+    """Everything the firm has taught you, with who taught it and when."""
+    items = notes.load()
+    if not items:
+        return "Nothing has been taught to me yet."
+    return "\n".join(
+        f"[{n['id']}] {n['text']}"
+        + (f" (taught by {n['added_by']}" + f", {n['added_at'][:10]})" if n.get("added_by")
+           else f" ({n.get('added_at', '')[:10]})")
+        for n in items)
+
+
+@skill
+def forget_note(note_id: str):
+    """Remove one taught note by its id. Use list_notes first to find the id."""
+    if notes.remove(note_id):
+        return f"Forgot note [{note_id}]."
+    return f"There is no note [{note_id}]."
+
+
+@skill
+def recent_sources(limit: int = 5):
+    """Where your earlier answers in this group came from. Use this when someone asks
+    where you got something, especially about an answer older than the current
+    conversation."""
+    entries = provenance.recent(provenance.current_chat(), limit=limit)
+    if not entries:
+        return "No recorded sources yet."
+    out = []
+    for e in entries:
+        srcs = ", ".join(e.get("sources") or []) or "(nothing retrieved)"
+        out.append(f"{e.get('ts', '')[:16]} | {e.get('question', '')[:70]} | {srcs}")
+    return "\n".join(out)
+
+
 @skill
 def current_datetime(tz: str = "Asia/Kolkata"):
     """Current date/time. Use for any question involving today/tomorrow/this week/deadlines."""
@@ -156,7 +218,8 @@ def search_causelist(court: str, date: str, query: str):
     name = causelists.COURTS[court].name
     if not hits:
         return f"No match for '{query}' in {name} cause list of {date}."
-    return f"{len(hits)} match(es) in {name} list of {date}:\n\n" + "\n\n".join(hits[:20])
+    return _cite(f"{len(hits)} match(es) in {name} list of {date}:\n\n" + "\n\n".join(hits[:20]),
+                 f"{name} cause list, {date}")
 
 
 @skill
@@ -169,7 +232,8 @@ def todays_causelist_matches(date: str):
     lines = []
     for r in rows:
         lines.append(f"• {r['case_no']} ({r['client']}) — {r['court'].upper()}\n{r['matches'][0]}")
-    return f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n\n".join(lines)
+    return _cite(f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n\n".join(lines),
+                 f"SC, Delhi HC and Meghalaya HC cause lists, {date}")
 
 
 @skill
@@ -181,7 +245,7 @@ def list_firm_cases(court: str = ""):
         df = df[df.court == court.lower()]
     if df.empty:
         return "No cases."
-    return df.to_string(index=False)
+    return _cite(df.to_string(index=False), "firm case list")
 
 
 @skill
@@ -196,7 +260,7 @@ def firm_register():
     if total > 100:
         df = df.head(100)
         note = f"\n(showing first 100 of {total} rows)"
-    return df.to_string(index=False) + note
+    return _cite(df.to_string(index=False) + note, f"firm file register, {total} rows")
 
 
 # --- supreme court case-status skills ---
@@ -240,7 +304,7 @@ def _sc_format(res: dict, what: str) -> str:
                 lines.append("\n" + "\n".join(extra))
         except (ValueError, TypeError) as e:
             lines.append(f"\n(Full details unavailable: {e})")
-    return "\n".join(lines)
+    return _cite("\n".join(lines), f"sci.gov.in case status, {what}")
 
 
 @skill
@@ -278,7 +342,74 @@ def zoho_find_customer(name: str):
     hits = _zoho().customers(name)
     if not hits:
         return f"No Zoho customer matching '{name}'."
-    return "\n".join(f"{c['contact_id']} | {c['contact_name']}" for c in hits[:10])
+    return _cite("\n".join(f"{c['contact_id']} | {c['contact_name']}" for c in hits[:10]),
+                 "Zoho Invoice, contacts")
+
+
+@skill
+def zoho_recent_invoices(customer_id: str, limit: int = 5):
+    """A customer's recent invoices with their line items, rates and wording. Call this
+    BEFORE raising a new invoice so the draft matches the firm's established format and
+    that customer's standing rate. Also answers 'what did we last charge X'."""
+    z = _zoho()
+    recent = z.invoices(customer_id=customer_id, limit=limit)
+    if not recent:
+        return f"No invoice history for customer {customer_id}."
+    out = []
+    for inv in recent:
+        full = z.invoice(inv["invoice_id"])
+        total = full.get("total")
+        total_txt = f"₹{total:.2f}" if isinstance(total, (int, float)) else "?"
+        head = (f"{full.get('invoice_number', '?')} | {full.get('date', '?')} | "
+                f"{full.get('status', '?')} | total {total_txt}")
+        lines = [f"  • {li.get('name', '')} | {li.get('description', '')} | "
+                 f"rate {li.get('rate')} x {li.get('quantity')}"
+                 for li in full.get("line_items", [])]
+        out.append("\n".join([head] + lines))
+    numbers = ", ".join(i.get("invoice_number", "?") for i in recent)
+    return _cite(f"Last {len(out)} invoice(s):\n\n" + "\n\n".join(out),
+                 f"Zoho Invoice, {numbers}")
+
+
+# The firm's house format, measured from the live account on 2026-08-03. Every
+# appearance invoice is these exact two lines, so build them here rather than
+# asking the model to assemble line items freehand: the template can't drift,
+# and the clerkage arithmetic isn't left to a language model.
+APPEARANCE_HEADING = "Appearance & Arguments"
+CLERKAGE_HEADING = "Clerkage"  # historical invoices misspell this "Clearkage"
+DEFAULT_COURT = "Meghalaya High Court at Shillong"
+
+
+@skill
+def zoho_create_appearance_invoice(customer_id: str, hearing_date: str, case_number: str,
+                                   cause_title: str, fee: float,
+                                   court: str = DEFAULT_COURT, clerkage_pct: float = 10):
+    """Create a DRAFT appearance invoice in the firm's house format: an
+    'Appearance & Arguments' line plus a clerkage line at clerkage_pct of the fee.
+    hearing_date is YYYY-MM-DD. cause_title is the full cause title, e.g.
+    'M/S Kamakshi Ispat Ltd. Vs. Meghalaya Power Distribution Corporation Ltd. & Ors.'.
+    Use zoho_recent_invoices first to find that customer's standing fee. NOT sent to anyone."""
+    from datetime import datetime
+    try:
+        day = datetime.strptime(hearing_date.strip(), "%Y-%m-%d")
+    except (ValueError, AttributeError):
+        raise ValueError(f"hearing_date must be YYYY-MM-DD, got {hearing_date!r}")
+
+    description = (f"Appearance and arguments on {day.strftime('%d.%m.%Y')} in "
+                   f"{case_number} titled as {cause_title} before {court}.")
+    clerkage = round(fee * clerkage_pct / 100.0, 2)
+    items = [
+        {"name": APPEARANCE_HEADING, "description": description, "rate": fee, "quantity": 1},
+        {"name": CLERKAGE_HEADING, "description": f"@ {clerkage_pct:g}%",
+         "rate": clerkage, "quantity": 1},
+    ]
+    inv = _zoho().create_draft(customer_id, items)
+    total = inv.get("total")
+    total_txt = f"₹{total:.2f}" if isinstance(total, (int, float)) else "amount unavailable"
+    return _cite(f"Draft created: {inv.get('invoice_number', '?')} for {total_txt} "
+                 f"({APPEARANCE_HEADING} ₹{fee:g} + {CLERKAGE_HEADING} ₹{clerkage:g}, "
+                 f"invoice_id={inv.get('invoice_id', '?')}). NOT sent — review it in Zoho.",
+                 f"Zoho Invoice, {inv.get('invoice_number', '?')}")
 
 
 @skill
