@@ -9,6 +9,7 @@ from agents import (
 )
 
 import notes
+import provenance
 from skills import SKILLS
 
 KEY_OPENAI = os.getenv("OPENAI_API_KEY", "")
@@ -73,9 +74,24 @@ def build_agent(extra_instructions=""):
 agent = build_agent()
 
 
+def _usage_of(result):
+    """Token usage from a run, or None if the SDK did not report any."""
+    usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+    if usage is None:
+        return None
+    return {"input": getattr(usage, "input_tokens", None),
+            "output": getattr(usage, "output_tokens", None),
+            "total": getattr(usage, "total_tokens", None)}
+
+
 def ask_full(prompt, history=None):
     inp = (history + [{"role": "user", "content": prompt}]) if history else prompt
     r = Runner.run_sync(build_agent(), inp)
+    usage = _usage_of(r)
+    if usage:
+        # Cheap standing measurement: journalctl -u indus-agent | grep tokens
+        print(f"[agent] tokens in={usage['input']} out={usage['output']} total={usage['total']}")
+        provenance.set_usage(usage)
     return r.final_output, r.to_input_list()
 
 
