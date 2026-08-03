@@ -8,10 +8,14 @@ for p in ("/Users/aditi/Downloads/packages/aides", "/Users/aditi/Downloads/packa
 
 
 @pytest.fixture(autouse=True)
-def _isolate_sc_cache():
-    """The Supreme Court lookup cache lives for a day and is module level, so
-    without this one test's cached result silently answers the next one's call."""
+def _isolate_caches():
+    """Module level caches outlive a single test, so without this one test's
+    cached result silently answers the next test's call — which briefly made
+    four captcha tests pass without ever running the code under test."""
+    import billing
     import casestatus
-    casestatus.clear_cache()
+    for mod in (billing, casestatus):
+        mod.clear_cache()
     yield
-    casestatus.clear_cache()
+    for mod in (billing, casestatus):
+        mod.clear_cache()

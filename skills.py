@@ -6,6 +6,7 @@ import pandas as pd
 from agents import function_tool
 import aides
 
+import billing
 import notes
 import provenance
 
@@ -347,7 +348,7 @@ def zoho_find_customer(name: str):
 
 
 @skill
-def zoho_recent_invoices(customer_id: str, limit: int = 5):
+def zoho_recent_invoices(customer_id: str, limit: int = 2):
     """A customer's recent invoices with their line items, rates and wording. Call this
     BEFORE raising a new invoice so the draft matches the firm's established format and
     that customer's standing rate. Also answers 'what did we last charge X'."""
@@ -371,6 +372,43 @@ def zoho_recent_invoices(customer_id: str, limit: int = 5):
                  f"Zoho Invoice, {numbers}")
 
 
+@skill
+def billing_profile(customer: str):
+    """Everything needed to raise an invoice, in one call: resolves the customer by
+    name, gives their standing rate and clerkage percentage, and lists the exact case
+    numbers and cause titles already billed. Reuse those exact titles rather than
+    retyping a case number from what someone said. Call this before
+    zoho_create_appearance_invoice."""
+    z = _zoho()
+    wanted = customer.strip()
+    if wanted.isdigit():
+        contact_id = contact_name = wanted
+    else:
+        hits = z.customers(wanted)
+        if not hits:
+            return f"No Zoho customer matching '{customer}'."
+        if len(hits) > 1:
+            listing = "\n".join(f"  {c['contact_id']} | {c['contact_name']}" for c in hits[:10])
+            return f"Several customers match '{customer}' — which one?\n{listing}"
+        contact_id, contact_name = hits[0]["contact_id"], hits[0]["contact_name"]
+
+    prof = billing.profile(z, contact_id)
+    lines = [f"Customer: {contact_name} (id {contact_id})"]
+    if prof["rate"] is None:
+        lines.append("No invoice history for this customer — ask for the fee and the "
+                     "exact cause title before drafting.")
+        return _cite("\n".join(lines), "Zoho Invoice, contacts")
+
+    lines.append(f"Standing rate: {prof['rate']:g} (Appearance & Arguments), "
+                 f"clerkage {prof['clerkage_pct']}%")
+    lines.append("Matters previously billed (use these exact cause titles):")
+    lines += [f"  {m['case']} | {m['title']} | last billed {m['last_billed']}"
+              for m in prof["matters"]]
+    lines += [f"  (could not parse, read as-is) {u}" for u in prof["unparsed"]]
+    return _cite("\n".join(lines),
+                 f"Zoho Invoice, {', '.join(prof['invoice_numbers'][:5])}")
+
+
 # The firm's house format, measured from the live account on 2026-08-03. Every
 # appearance invoice is these exact two lines, so build them here rather than
 # asking the model to assemble line items freehand: the template can't drift,
@@ -382,20 +420,42 @@ DEFAULT_COURT = "Meghalaya High Court at Shillong"
 
 @skill
 def zoho_create_appearance_invoice(customer_id: str, hearing_date: str, case_number: str,
-                                   cause_title: str, fee: float,
-                                   court: str = DEFAULT_COURT, clerkage_pct: float = 10):
+                                   cause_title: str, fee: float = 0,
+                                   court: str = DEFAULT_COURT, clerkage_pct: float = 0):
     """Create a DRAFT appearance invoice in the firm's house format: an
     'Appearance & Arguments' line plus a clerkage line at clerkage_pct of the fee.
     hearing_date is YYYY-MM-DD. cause_title is the full cause title, e.g.
     'M/S Kamakshi Ispat Ltd. Vs. Meghalaya Power Distribution Corporation Ltd. & Ors.'.
-    Use zoho_recent_invoices first to find that customer's standing fee. NOT sent to anyone."""
+    Leave fee and clerkage_pct out and the customer's standing rate is used; pass a fee
+    only when told a different amount. Refuses to bill the same hearing twice.
+    NOT sent to anyone."""
     from datetime import datetime
     try:
         day = datetime.strptime(hearing_date.strip(), "%Y-%m-%d")
     except (ValueError, AttributeError):
         raise ValueError(f"hearing_date must be YYYY-MM-DD, got {hearing_date!r}")
 
-    description = (f"Appearance and arguments on {day.strftime('%d.%m.%Y')} in "
+    stamp = day.strftime("%d.%m.%Y")
+    z = _zoho()
+
+    already = billing.find_duplicate(z, customer_id, case_number, stamp)
+    if already:
+        return (f"Not created: {already} already bills {case_number} for {stamp}. "
+                f"Check that invoice in Zoho before raising another.")
+
+    # The rate comes from history rather than from the model, which cannot then
+    # invent one. Only an explicit instruction overrides it.
+    if not fee or fee <= 0 or not clerkage_pct:
+        prof = billing.profile(z, customer_id)
+        if not fee or fee <= 0:
+            fee = prof["rate"]
+            if not fee:
+                raise ValueError("No invoice history for this customer, so I do not know "
+                                 "the fee to bill — tell me the amount.")
+        if not clerkage_pct:
+            clerkage_pct = prof["clerkage_pct"] or 10
+
+    description = (f"Appearance and arguments on {stamp} in "
                    f"{case_number} titled as {cause_title} before {court}.")
     clerkage = round(fee * clerkage_pct / 100.0, 2)
     items = [
@@ -403,7 +463,7 @@ def zoho_create_appearance_invoice(customer_id: str, hearing_date: str, case_num
         {"name": CLERKAGE_HEADING, "description": f"@ {clerkage_pct:g}%",
          "rate": clerkage, "quantity": 1},
     ]
-    inv = _zoho().create_draft(customer_id, items)
+    inv = z.create_draft(customer_id, items)
     total = inv.get("total")
     total_txt = f"₹{total:.2f}" if isinstance(total, (int, float)) else "amount unavailable"
     return _cite(f"Draft created: {inv.get('invoice_number', '?')} for {total_txt} "
