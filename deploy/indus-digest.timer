@@ -1,5 +1,5 @@
 [Unit]
-Description=Run nyaya digest every morning at 07:00 IST
+Description=Run indus digest every morning at 07:00 IST
 
 [Timer]
 OnCalendar=*-*-* 07:00:00 Asia/Kolkata

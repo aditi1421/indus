@@ -11,7 +11,7 @@ import requests
 CACHE = Path(".cache/causelists")
 CACHE.mkdir(parents=True, exist_ok=True)
 
-UA = {"User-Agent": "Mozilla/5.0 (Macintosh) nyaya-clerk/1.0"}
+UA = {"User-Agent": "Mozilla/5.0 (Macintosh) indus-clerk/1.0"}
 
 # In-process negative cache: (court, date) -> time.time() of the last "not
 # published" conclusion. Without this, an unpublished day re-triggers the

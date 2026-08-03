@@ -1,6 +1,6 @@
 [Unit]
-Description=Nyaya WhatsApp gateway (whatsmeow)
-After=nyaya-agent.service
+Description=Indus WhatsApp gateway (whatsmeow)
+After=indus-agent.service
 
 [Service]
 User=ubuntu

@@ -22,7 +22,7 @@ python3 -m venv .venv
 # run fine on 3.11), so `pip install -e` refuses them. Point the venv at the checked-out
 # packages directly with a .pth path file instead of installing them.
 PYVER=$(.venv/bin/python -c 'import sys;print(f"python{sys.version_info.major}.{sys.version_info.minor}")')
-printf '%s\n' "$HOME/packages/aides" "$HOME/packages/wraps" > ".venv/lib/${PYVER}/site-packages/nyaya_paths.pth"
+printf '%s\n' "$HOME/packages/aides" "$HOME/packages/wraps" > ".venv/lib/${PYVER}/site-packages/indus_paths.pth"
 
 (cd gateway && go build .)
 
@@ -31,8 +31,8 @@ GROUP=$(aws ssm get-parameter --region ap-south-1 --name /apps/courts/whatsapp_g
 install -m 600 /dev/null gateway/gateway.env
 echo "GROUP_JID=${GROUP}" > gateway/gateway.env
 
-sudo cp deploy/nyaya-*.service deploy/nyaya-digest.timer /etc/systemd/system/
+sudo cp deploy/indus-*.service deploy/indus-digest.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now nyaya-agent nyaya-gateway nyaya-digest.timer
-echo "Done. First run: journalctl -fu nyaya-gateway to scan the QR (or SSH in and run"
+sudo systemctl enable --now indus-agent indus-gateway indus-digest.timer
+echo "Done. First run: journalctl -fu indus-gateway to scan the QR (or SSH in and run"
 echo "./gateway -paircode <phone> for remote linking without a QR scan)."
