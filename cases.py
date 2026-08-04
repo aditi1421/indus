@@ -158,11 +158,12 @@ def court_matters() -> list[dict]:
             unique.append(matter)
     return unique
 def _search(court, date, query):
-    return _causelist_search(court, date, query)
+    # network=False: answering must never download. See causelists.fetch.
+    return _causelist_search(court, date, query, network=False)
 
 
 def _fetch(court, date):
-    return _causelist_fetch(court, date)
+    return _causelist_fetch(court, date, network=False)
 
 
 def _map_columns(columns: list[str]) -> dict:
