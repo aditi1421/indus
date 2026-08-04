@@ -250,6 +250,52 @@ def _sc_diary_status_uncached(diary_no: int, year: int, *,
         max_captcha_retries=max_captcha_retries, solve=solve)
 
 
+AOR_PAGE = "/case-status-aor-code/"
+
+# The registry prints case numbers zero-padded and sometimes with a stray dash
+# ("SLP(C) No. 001614 -  / 2026"); a cause list prints "SLP(C) No. 1614/2026".
+# Tidy them so the two can be matched.
+_PAD = re.compile(r"\b0+(\d)")
+_STRAY = re.compile(r"\s*-\s*(?=/)")
+_SPACED_SLASH = re.compile(r"\s*/\s*")
+
+
+def tidy_case_no(case_number: str) -> str:
+    out = _STRAY.sub("", str(case_number or ""))
+    out = _SPACED_SLASH.sub("/", out)
+    out = _PAD.sub(r"\1", out)
+    return " ".join(out.split()).strip()
+
+
+def sc_aor_cases(aor_code, year, *, party_type="any", status="P", **kw) -> dict:
+    """The firm's Supreme Court matters for one year, by Advocate-on-Record code.
+
+    The registry's own answer rather than an inference from cause-list text, so
+    it knows a matter exists before it is ever listed. The AOR code is the value
+    of the aor_code select on the search page (2648 = Mr. AVIJIT MANI TRIPATHI).
+
+    Field values are codes, not labels: sending "Pending" instead of "P" is
+    rejected with "Case Status field is invalid".
+    """
+    key = ("aor", str(aor_code), str(year), party_type, status)
+    hit = _CACHE.get(key)
+    now = time.time()
+    if hit and now - hit[0] < CACHE_TTL_SECONDS:
+        return hit[1]
+
+    result = _run_search(
+        "get_case_status_aor_code", AOR_PAGE,
+        {"party_type": party_type, "aor_code": str(aor_code),
+         "year": str(year), "case_status": status},
+        max_captcha_retries=kw.get("max_captcha_retries", 5), solve=kw.get("solve"))
+
+    if isinstance(result, dict) and not result.get("error"):
+        for row in result.get("results") or []:
+            row["case_number"] = tidy_case_no(row.get("case_number"))
+        _CACHE[key] = (now, result)
+    return result
+
+
 # --- caching ---
 #
 # Every status lookup costs a vision call per captcha attempt, plus retries, and
