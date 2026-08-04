@@ -291,6 +291,19 @@ def normalize_case_no(s: str) -> str:
     return re.sub(r"[^A-Z0-9/]", "", s.upper())
 
 
+def summarize_item(item: str, limit: int = 170) -> str:
+    """A matched item squeezed to one bounded line.
+
+    Raw item blocks carry every counsel line -- an In re matter runs to dozens
+    -- and a handful of them spends the whole tool-result budget: that is how
+    "about a dozen matters listed" reached the model as three on 2026-08-04.
+    The serial, case number and cause title lead the block, so the head of the
+    squeezed line is the identifying part.
+    """
+    line = " ".join(item.split())
+    return line if len(line) <= limit else line[:limit - 1].rstrip() + "…"
+
+
 def search(court: str, date: str, query: str, *, network: bool = True) -> list[str]:
     text = fetch(court, date, network=network).read_text("utf-8")
     q_norm = normalize_case_no(query)
