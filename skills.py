@@ -254,7 +254,14 @@ def search_causelist(court: str, date: str, query: str):
     name = causelists.COURTS[court].name
     if not hits:
         return f"No match for '{query}' in {name} cause list of {date}."
-    return _cite(f"{len(hits)} match(es) in {name} list of {date}:\n\n" + "\n\n".join(hits[:20]),
+    # A specific lookup gets the full item (court number and listing time live
+    # in the detail lines); a broad one gets one line per match so every match
+    # survives the tool-result cap instead of the first few crowding out the rest.
+    if len(hits) <= 3:
+        shown = "\n\n".join(hits)
+    else:
+        shown = "\n".join(causelists.summarize_item(h) for h in hits)
+    return _cite(f"{len(hits)} match(es) in {name} list of {date}:\n\n" + shown,
                  f"{name} cause list, {date}")
 
 
@@ -264,6 +271,7 @@ def todays_causelist_matches(date: str):
     Use for "what's listed today/tomorrow". States explicitly when a court's list could
     not be read, which is NOT the same as nothing being listed."""
     import cases
+    import causelists
     result = cases.listings_for(date)
     rows, checked, unavailable = result["rows"], result["checked"], result["unavailable"]
     names = {"sc": "Supreme Court", "dhc": "Delhi High Court", "mhc": "Meghalaya High Court"}
@@ -279,11 +287,17 @@ def todays_causelist_matches(date: str):
                 f"being listed — the lists themselves could not be read.")
 
     if rows:
+        # One line per matched item, never a raw extract: a single In re item's
+        # counsel lines can spend the whole tool-result cap, and showing only
+        # matches[0] hid every further matter a name token found (the bug that
+        # reported 3 matters on a 12-matter day, 2026-08-04).
         lines = []
         for r in rows:
             who = f" ({r['parties']})" if r.get("parties") else ""
-            lines.append(f"• {r['token']}{who} — {r['court'].upper()}\n{r['matches'][0]}")
-        body = f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n\n".join(lines)
+            lines.append(f"• {r['token']}{who} — {r['court'].upper()}, "
+                         f"{len(r['matches'])} item(s):")
+            lines.extend(f"  {causelists.summarize_item(m)}" for m in r["matches"])
+        body = f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n".join(lines)
     else:
         body = (f"No firm matters in the cause lists I could read for {date} "
                 f"({label(checked)}).")
