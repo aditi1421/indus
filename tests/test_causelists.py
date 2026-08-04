@@ -32,7 +32,7 @@ def test_normalize_case_no():
 def test_search_text_by_case_no_and_party(tmp_path, monkeypatch):
     f = tmp_path / "sc_2026-07-24.txt"
     f.write_text(SAMPLE)
-    monkeypatch.setattr(cl, "fetch", lambda court, date: f)
+    monkeypatch.setattr(cl, "fetch", lambda court, date, **kw: f)
     assert len(cl.search("sc", "2026-07-24", "678/2026")) == 1
     assert len(cl.search("sc", "2026-07-24", "acme infra")) == 1
     assert cl.search("sc", "2026-07-24", "nonexistent") == []
@@ -117,16 +117,16 @@ def test_fetch_refuses_to_cache_whitespace_only_extracted_text(tmp_path, monkeyp
 
 def test_fetch_falls_back_to_browser_use(tmp_path, monkeypatch):
     monkeypatch.setattr(cl, "CACHE", tmp_path)
-    monkeypatch.setattr(cl, "pdf_links", lambda c, d: [])
-    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: "1. W.P.(C) 1/2026 A Vs B")
+    monkeypatch.setattr(cl, "pdf_links", lambda c, d, **kw: [])
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date, **kw: "1. W.P.(C) 1/2026 A Vs B")
     p = cl.fetch("sc", "2026-07-24")
     assert "W.P.(C) 1/2026" in p.read_text()
 
 
 def test_fetch_raises_when_fallback_also_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(cl, "CACHE", tmp_path)
-    monkeypatch.setattr(cl, "pdf_links", lambda c, d: [])
-    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: None)
+    monkeypatch.setattr(cl, "pdf_links", lambda c, d, **kw: [])
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date, **kw: None)
     with pytest.raises(ValueError):
         cl.fetch("sc", "2026-07-24")
 
@@ -136,7 +136,7 @@ def test_fetch_raises_when_fallback_also_empty(tmp_path, monkeypatch):
 def test_fetch_mhc_falls_back_to_browser_use(tmp_path, monkeypatch):
     monkeypatch.setattr(cl, "CACHE", tmp_path)
     monkeypatch.setattr(cl, "_mhc_pdfs", lambda date: [])
-    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: "1. WP(C) 9/2026 X Vs Y")
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date, **kw: "1. WP(C) 9/2026 X Vs Y")
     p = cl.fetch("mhc", "2026-07-24")
     assert "WP(C) 9/2026" in p.read_text()
 
@@ -145,7 +145,7 @@ def test_fetch_mhc_raises_when_fallback_also_whitespace(tmp_path, monkeypatch):
     date = "2026-07-24"
     monkeypatch.setattr(cl, "CACHE", tmp_path)
     monkeypatch.setattr(cl, "_mhc_pdfs", lambda d: [])
-    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: "   \n\t  ")
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date, **kw: "   \n\t  ")
     with pytest.raises(ValueError):
         cl.fetch("mhc", date)
     assert not (tmp_path / f"mhc_{date}.txt").exists()
@@ -253,7 +253,7 @@ def test_fetch_negative_cache_cleared_on_success(tmp_path, monkeypatch):
     # the call, so we can observe that a successful fetch clears it.
     monkeypatch.setattr(cl, "NEGATIVE_TTL", 0)
     monkeypatch.setattr(cl, "_NEGATIVE", {("sc", "2026-07-24"): __import__("time").time()})
-    monkeypatch.setattr(cl, "pdf_links", lambda c, d: ["https://x/y.pdf"])
+    monkeypatch.setattr(cl, "pdf_links", lambda c, d, **kw: ["https://x/y.pdf"])
     monkeypatch.setattr(cl, "pdf_to_text", lambda path: "1. Some Case No. 1/2026 A Vs B\n")
 
     class _FakeResp:
@@ -281,7 +281,7 @@ def test_fetch_negative_cache_expires_after_ttl(tmp_path, monkeypatch):
         return []
 
     monkeypatch.setattr(cl, "pdf_links", fake_links)
-    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date: None)
+    monkeypatch.setattr(cl, "_fetch_via_browser", lambda court, date, **kw: None)
 
     with pytest.raises(ValueError):
         cl.fetch("sc", "2026-07-24")

@@ -1,0 +1,11 @@
+[Unit]
+Description=Warm the Indus Bot cause-list cache
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agent
+ExecStart=/home/ubuntu/agent/.venv/bin/python prefetch.py
+# The Supreme Court list is tens of megabytes across many PDFs on a 2-core box.
+TimeoutStartSec=2700
