@@ -260,7 +260,7 @@ def search_causelist(court: str, date: str, query: str):
     if len(hits) <= 3:
         shown = "\n\n".join(hits)
     else:
-        shown = "\n".join(causelists.summarize_item(h) for h in hits)
+        shown = "\n".join(causelists.summarize_item(h, around=query) for h in hits)
     return _cite(f"{len(hits)} match(es) in {name} list of {date}:\n\n" + shown,
                  f"{name} cause list, {date}")
 
@@ -290,14 +290,24 @@ def todays_causelist_matches(date: str):
         # One line per matched item, never a raw extract: a single In re item's
         # counsel lines can spend the whole tool-result cap, and showing only
         # matches[0] hid every further matter a name token found (the bug that
-        # reported 3 matters on a 12-matter day, 2026-08-04).
-        lines = []
+        # reported 3 matters on a 12-matter day, 2026-08-04). The headline
+        # counts listings, not search tokens -- "3 firm matters" on a 12-listing
+        # day was the number the model repeated. A block the extractor smeared
+        # across several searches is shown once, under the first that hit it.
+        lines, shown, total = [], set(), 0
         for r in rows:
             who = f" ({r['parties']})" if r.get("parties") else ""
+            fresh = [m for m in r["matches"] if m not in shown]
+            shown.update(fresh)
+            total += len(fresh)
+            note = ("" if len(fresh) == len(r["matches"])
+                    else f" ({len(r['matches']) - len(fresh)} shown above)")
             lines.append(f"• {r['token']}{who} — {r['court'].upper()}, "
-                         f"{len(r['matches'])} item(s):")
-            lines.extend(f"  {causelists.summarize_item(m)}" for m in r["matches"])
-        body = f"{len(rows)} firm matter(s) listed on {date}:\n\n" + "\n".join(lines)
+                         f"{len(fresh)} item(s){note}:")
+            lines.extend(f"  {causelists.summarize_item(m, around=r['token'])}"
+                         for m in fresh)
+        body = (f"{total} listing(s) for the firm on {date} "
+                f"across {len(rows)} matched search(es):\n\n" + "\n".join(lines))
     else:
         body = (f"No firm matters in the cause lists I could read for {date} "
                 f"({label(checked)}).")
