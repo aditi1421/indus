@@ -64,47 +64,99 @@ def _cell(row, col):
     return "" if value.lower() == "nan" else value
 
 
-def court_matters() -> list[dict]:
-    """The firm's court matters, each with the token to search a cause list for.
+def _sc_terms() -> list[str]:
+    """Search terms identifying the firm's Supreme Court matters.
 
-    The government file register cannot serve this purpose: it holds FILE and
-    letter numbers ("File No. LJ(B)57/2024"), while cause lists carry court
-    case numbers. Matching one against the other can never hit, which is why
-    the bot reported nothing listed every day until 2026-08-04.
-
-    A row is searched by its case number, or by its AOR code when it has none.
-    One Supreme Court row keyed on an AOR code therefore covers every matter
-    that advocate is on, including ones filed since the sheet was last edited.
+    Not an AOR code: codes are not printed in the published cause-list text.
+    Checked against a live list on 2026-08-04, "2648" matched only the case
+    number range "2646-2648/2026", so keying on it would have reported other
+    people's matters as the firm's. The advocate's name is what appears.
     """
-    try:
-        df = _matters_tab()
-    except Exception as e:
-        raise ValueError(
-            f"Could not read the '{MATTERS_TAB}' tab of the firm sheet: {e}")
+    from config import get_cfg
+    raw = getattr(get_cfg(), "sc_search_terms", "") or ""
+    return [t.strip() for t in raw.split(",") if t.strip()]
 
-    court_col = _first_col(df.columns, "court")
-    if not court_col:
-        raise ValueError(f"The '{MATTERS_TAB}' tab needs a COURT column; "
-                         f"found {list(df.columns)}")
-    case_col = _first_col(df.columns, "case no", "case_no", "case number", "case")
-    parties_col = _first_col(df.columns, "parties", "party")
-    aor_col = _first_col(df.columns, "aor code", "aor", "aor_code")
 
+def _sc_aor_matters() -> list[dict]:
+    """The firm's Supreme Court matters, straight from the registry by AOR code.
+
+    Preferred over matching the advocate's name in cause-list text: it is the
+    court's own answer, it carries the parties, and it knows a matter exists
+    before it has ever been listed. Cached for a day inside casestatus, so the
+    captcha is solved at most once per year queried per day.
+    """
+    from config import get_cfg
+    import casestatus
+    code = (getattr(get_cfg(), "sc_aor_code", "") or "").strip()
+    if not code:
+        return []
+    this_year = aides.now(tz="Asia/Kolkata").year
     out = []
-    for _, row in df.iterrows():
-        court = _cell(row, court_col).lower()
-        court = next((v for k, v in COURT_ALIASES.items() if k in court), court)
-        if court not in ("sc", "dhc", "mhc"):
-            continue
-        case_no, aor = _cell(row, case_col), _cell(row, aor_col)
-        token = case_no or aor
-        if not token:
-            continue  # nothing to search for; a row like this is just a note
-        out.append({"court": court, "token": token, "case_no": case_no,
-                    "aor": aor, "parties": _cell(row, parties_col)})
+    for year in (this_year, this_year - 1):
+        result = casestatus.sc_aor_cases(code, year)
+        if result.get("error"):
+            continue  # an outage must not silently shrink the firm's caseload
+        for row in result.get("results") or []:
+            number = row.get("case_number") or ""
+            if not number:
+                continue
+            out.append({"court": "sc", "token": number, "case_no": number, "aor": code,
+                        "parties": f"{row.get('petitioner', '')} vs {row.get('respondent', '')}".strip(" vs")})
     return out
 
 
+def court_matters() -> list[dict]:
+    """The firm's court matters, each with the token to search a cause list for.
+
+    Two sources, both optional, so this degrades rather than breaks:
+
+    A configured search term per court, which needs no maintenance and catches
+    matters filed since anyone last edited a spreadsheet. For the Supreme Court
+    that is the advocate's name.
+
+    Plus a COURT MATTERS tab for anything a term cannot catch. Google's CSV
+    endpoint silently serves the first tab when the named one is absent, so a
+    sheet with no COURT column is treated as "no tab" rather than as an error.
+
+    The government file register is deliberately not a source: it holds FILE
+    and letter numbers while cause lists carry court case numbers, so matching
+    one against the other can never hit. That was the bug that had the bot
+    reporting nothing listed every day until 2026-08-04.
+    """
+    out = list(_sc_aor_matters())
+    for term in _sc_terms():
+        out.append({"court": "sc", "token": term, "case_no": "", "aor": "",
+                    "parties": f"matters listing {term}"})
+
+    try:
+        df = _matters_tab()
+    except Exception:
+        df = None
+
+    court_col = _first_col(df.columns, "court") if df is not None else None
+    if court_col:
+        case_col = _first_col(df.columns, "case no", "case_no", "case number", "case")
+        parties_col = _first_col(df.columns, "parties", "party")
+        other_col = _first_col(df.columns, "aor code", "aor", "aor_code", "name", "advocate")
+        for _, row in df.iterrows():
+            court = _cell(row, court_col).lower()
+            court = next((v for k, v in COURT_ALIASES.items() if k in court), court)
+            if court not in ("sc", "dhc", "mhc"):
+                continue
+            case_no, other = _cell(row, case_col), _cell(row, other_col)
+            token = case_no or other
+            if not token:
+                continue  # a row with no identifier is just a note
+            out.append({"court": court, "token": token, "case_no": case_no,
+                        "aor": other, "parties": _cell(row, parties_col)})
+
+    seen, unique = set(), []
+    for matter in out:
+        key = (matter["court"], matter["token"].lower())
+        if key not in seen:
+            seen.add(key)
+            unique.append(matter)
+    return unique
 def _search(court, date, query):
     return _causelist_search(court, date, query)
 

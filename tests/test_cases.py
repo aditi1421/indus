@@ -30,6 +30,8 @@ def _fake_matters_tab():
 
 def test_listings_for_matches_only_listed(monkeypatch):
     monkeypatch.setattr(cases, "_matters_tab", _fake_matters_tab)
+    monkeypatch.setattr(cases, "_sc_terms", lambda: [])
+    monkeypatch.setattr(cases, "_sc_aor_matters", lambda: [])
     monkeypatch.setattr(cases, "_fetch", lambda court, date: None)
 
     def fake_search(court, date, query):
@@ -173,6 +175,8 @@ def _fake_matters_tab_two_rows():
 
 def test_listings_for_searches_each_matters_token(monkeypatch):
     monkeypatch.setattr(cases, "_matters_tab", _fake_matters_tab_two_rows)
+    monkeypatch.setattr(cases, "_sc_terms", lambda: [])
+    monkeypatch.setattr(cases, "_sc_aor_matters", lambda: [])
     monkeypatch.setattr(cases, "_fetch", lambda court, date: None)
     captured = []
 
@@ -202,6 +206,8 @@ def _fake_sheet_five_mhc_rows():
 
 def test_listings_for_resolves_court_once_and_skips_unavailable_rows(monkeypatch):
     monkeypatch.setattr(cases, "_matters_tab", _fake_sheet_five_mhc_rows)
+    monkeypatch.setattr(cases, "_sc_terms", lambda: [])
+    monkeypatch.setattr(cases, "_sc_aor_matters", lambda: [])
 
     fetch_calls = []
 
