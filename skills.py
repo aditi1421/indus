@@ -295,6 +295,23 @@ def todays_causelist_matches(date: str):
 
 
 @skill
+def firm_sc_matters():
+    """The firm's PENDING Supreme Court matters, from the Supreme Court registry itself
+    (searched by the firm's Advocate-on-Record code). Use for "what Supreme Court cases
+    do we have". Slow on the first call of the day: it solves a captcha."""
+    import cases
+    rows = cases._sc_aor_matters()
+    if not rows:
+        return "No pending Supreme Court matters found for the firm's AOR code."
+    lines = [f"{len(rows)} pending Supreme Court matter(s):"]
+    for r in rows[:25]:
+        lines.append(f"• {r['case_no']} — {r['parties']}")
+    if len(rows) > 25:
+        lines.append(f"…and {len(rows) - 25} more")
+    return _cite("\n".join(lines), "sci.gov.in case status by AOR code")
+
+
+@skill
 def list_firm_cases(court: str = ""):
     """List the firm's tracked cases, optionally filtered by court (sc|dhc|mhc)."""
     import cases

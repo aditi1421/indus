@@ -24,6 +24,7 @@ def test_load_maps_ssm_values(monkeypatch):
         "/apps/courts/zoho_org": "zo",
         "/apps/courts/whatsapp_group": "120363000000000000@g.us",
         "/apps/courts/sc_search_terms": "AVIJIT MANI",
+        "/apps/courts/sc_aor_code": "2648",
     }
 
     class FakeSSM:
@@ -54,6 +55,7 @@ def test_load_raises_clear_error_when_ssm_value_missing(monkeypatch):
         "/apps/courts/zoho_org": "zo",
         "/apps/courts/whatsapp_group": "120363000000000000@g.us",
         "/apps/courts/sc_search_terms": "AVIJIT MANI",
+        "/apps/courts/sc_aor_code": "2648",
     }
 
     class FakeSSM:

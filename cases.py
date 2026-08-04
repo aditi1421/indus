@@ -77,6 +77,34 @@ def _sc_terms() -> list[str]:
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
+def _sc_aor_matters() -> list[dict]:
+    """The firm's Supreme Court matters, straight from the registry by AOR code.
+
+    Preferred over matching the advocate's name in cause-list text: it is the
+    court's own answer, it carries the parties, and it knows a matter exists
+    before it has ever been listed. Cached for a day inside casestatus, so the
+    captcha is solved at most once per year queried per day.
+    """
+    from config import get_cfg
+    import casestatus
+    code = (getattr(get_cfg(), "sc_aor_code", "") or "").strip()
+    if not code:
+        return []
+    this_year = aides.now(tz="Asia/Kolkata").year
+    out = []
+    for year in (this_year, this_year - 1):
+        result = casestatus.sc_aor_cases(code, year)
+        if result.get("error"):
+            continue  # an outage must not silently shrink the firm's caseload
+        for row in result.get("results") or []:
+            number = row.get("case_number") or ""
+            if not number:
+                continue
+            out.append({"court": "sc", "token": number, "case_no": number, "aor": code,
+                        "parties": f"{row.get('petitioner', '')} vs {row.get('respondent', '')}".strip(" vs")})
+    return out
+
+
 def court_matters() -> list[dict]:
     """The firm's court matters, each with the token to search a cause list for.
 
@@ -95,7 +123,7 @@ def court_matters() -> list[dict]:
     one against the other can never hit. That was the bug that had the bot
     reporting nothing listed every day until 2026-08-04.
     """
-    out = []
+    out = list(_sc_aor_matters())
     for term in _sc_terms():
         out.append({"court": "sc", "token": term, "case_no": "", "aor": "",
                     "parties": f"matters listing {term}"})

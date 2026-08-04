@@ -21,6 +21,7 @@ def _no_sc_terms(monkeypatch):
     """Most tests care about the tab; the configured Supreme Court term is
     opted into explicitly so it cannot quietly satisfy an assertion."""
     monkeypatch.setattr(cases, "_sc_terms", lambda: [])
+    monkeypatch.setattr(cases, "_sc_aor_matters", lambda: [])
 
 
 @pytest.fixture
