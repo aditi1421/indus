@@ -291,17 +291,33 @@ def normalize_case_no(s: str) -> str:
     return re.sub(r"[^A-Z0-9/]", "", s.upper())
 
 
-def summarize_item(item: str, limit: int = 170) -> str:
+def summarize_item(item: str, limit: int = 170, around: str = "") -> str:
     """A matched item squeezed to one bounded line.
 
     Raw item blocks carry every counsel line -- an In re matter runs to dozens
     -- and a handful of them spends the whole tool-result budget: that is how
     "about a dozen matters listed" reached the model as three on 2026-08-04.
-    The serial, case number and cause title lead the block, so the head of the
-    squeezed line is the identifying part.
+
+    The Supreme Court's extracted text also smears connected matters into one
+    block, so the head of a block can be a different case than the one that
+    matched. When `around` (the matched token) is found, the window is placed
+    over it rather than over the block's head.
     """
     line = " ".join(item.split())
-    return line if len(line) <= limit else line[:limit - 1].rstrip() + "…"
+    if len(line) <= limit:
+        return line
+    start = 0
+    if around:
+        idx = line.lower().find(" ".join(around.split()).lower())
+        if idx > 0:
+            start = max(0, min(idx - limit // 3, len(line) - limit))
+    end = start + limit
+    if start:
+        start += 1
+    if end < len(line):
+        end -= 1
+    text = line[start:end].strip()
+    return ("…" if start else "") + text + ("…" if end < len(line) else "")
 
 
 def search(court: str, date: str, query: str, *, network: bool = True) -> list[str]:
