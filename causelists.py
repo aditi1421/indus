@@ -141,8 +141,15 @@ def _mhc_pdfs(date: str) -> list[bytes]:
 
 
 def pdf_to_text(path: Path) -> str:
+    # Page caches are flushed as we go: a Supreme Court daily list runs to
+    # hundreds of pages, and holding every page's objects at once grew the
+    # process past the server's 2GB and got it OOM-killed (2026-08-04).
+    parts = []
     with pdfplumber.open(path) as pdf:
-        return "\n".join(page.extract_text() or "" for page in pdf.pages)
+        for page in pdf.pages:
+            parts.append(page.extract_text() or "")
+            page.close()
+    return "\n".join(parts)
 
 
 def _fetch_via_browser(court: str, date: str) -> str | None:
