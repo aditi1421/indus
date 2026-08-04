@@ -1,0 +1,12 @@
+[Unit]
+Description=Fetch each day's cause lists before anyone asks
+
+[Timer]
+# 05:30 IST, comfortably ahead of the 07:00 digest, and again at midday for
+# lists a court publishes late.
+OnCalendar=*-*-* 05:30:00 Asia/Kolkata
+OnCalendar=*-*-* 12:30:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target

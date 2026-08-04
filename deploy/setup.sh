@@ -33,6 +33,7 @@ echo "GROUP_JID=${GROUP}" > gateway/gateway.env
 
 sudo cp deploy/indus-*.service deploy/indus-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now indus-agent indus-gateway indus-digest.timer indus-autodeploy.timer
+sudo systemctl enable --now indus-agent indus-gateway indus-digest.timer \
+  indus-autodeploy.timer indus-prefetch.timer
 echo "Done. First run: journalctl -fu indus-gateway to scan the QR (or SSH in and run"
 echo "./gateway -paircode <phone> for remote linking without a QR scan)."

@@ -165,7 +165,27 @@ def _fetch_via_browser(court: str, date: str) -> str | None:
     return None if text.strip() == "NO_LIST" else text
 
 
-def fetch(court: str, date: str) -> Path:
+def cached_path(court: str, date: str) -> Path:
+    return CACHE / f"{court}_{date}.txt"
+
+
+def fetch(court: str, date: str, *, network: bool = True) -> Path:
+    """The extracted cause-list text for a court and date.
+
+    With network=False this only ever reads the cache. Answering a question
+    must not download a cause list: the Supreme Court publishes many
+    multi-megabyte PDFs, and fetching plus extracting them measured over 280
+    seconds on this box, against a 180 second budget from the gateway. A
+    background prefetch fills the cache; requests only read it.
+    """
+    out = cached_path(court, date)
+    if out.is_file() and out.stat().st_size > 0:
+        return out
+    if not network:
+        raise ValueError(
+            f"The {COURTS[court].name} cause list for {date} has not been fetched yet "
+            f"(cause lists are fetched in the background each morning).")
+
     key = (court, date)
     cached_at = _NEGATIVE.get(key)
     if cached_at is not None and (time.time() - cached_at) < NEGATIVE_TTL:
@@ -264,8 +284,8 @@ def normalize_case_no(s: str) -> str:
     return re.sub(r"[^A-Z0-9/]", "", s.upper())
 
 
-def search(court: str, date: str, query: str) -> list[str]:
-    text = fetch(court, date).read_text("utf-8")
+def search(court: str, date: str, query: str, *, network: bool = True) -> list[str]:
+    text = fetch(court, date, network=network).read_text("utf-8")
     q_norm = normalize_case_no(query)
     q_low = query.lower()
     hits = []
