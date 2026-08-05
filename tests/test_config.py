@@ -25,6 +25,7 @@ def test_load_maps_ssm_values(monkeypatch):
         "/apps/courts/whatsapp_group": "120363000000000000@g.us",
         "/apps/courts/sc_search_terms": "AVIJIT MANI",
         "/apps/courts/sc_aor_code": "2648",
+        "/apps/courts/key_exa": "ke",
     }
 
     class FakeSSM:
@@ -56,6 +57,7 @@ def test_load_raises_clear_error_when_ssm_value_missing(monkeypatch):
         "/apps/courts/whatsapp_group": "120363000000000000@g.us",
         "/apps/courts/sc_search_terms": "AVIJIT MANI",
         "/apps/courts/sc_aor_code": "2648",
+        "/apps/courts/key_exa": "ke",
     }
 
     class FakeSSM:
@@ -66,6 +68,35 @@ def test_load_raises_clear_error_when_ssm_value_missing(monkeypatch):
     with pytest.raises(ValueError) as exc:
         config.Config.load()
     assert "/apps/courts/key_browser_use" in str(exc.value)
+
+
+def test_load_tolerates_a_missing_optional_key(monkeypatch):
+    # /apps/courts/key_exa may not exist in SSM yet. The agent must still boot;
+    # only the legal_research skill should complain, and only when called.
+    fake = {
+        "/apps/bucket": "b",
+        "/core/openai/key_openai": "ko",
+        "/core/google/key_gemini": "kg",
+        "/apps/courts/sheet_indus": "si",
+        "/apps/courts/key_indus": "ki",
+        "/apps/courts/key_browser_use": "kb",
+        "/apps/courts/zoho_client_id": "zi",
+        "/apps/courts/zoho_client_secret": "zs",
+        "/apps/courts/zoho_refresh": "zr",
+        "/apps/courts/zoho_org": "zo",
+        "/apps/courts/whatsapp_group": "120363000000000000@g.us",
+        "/apps/courts/sc_search_terms": "AVIJIT MANI",
+        "/apps/courts/sc_aor_code": "2648",
+        # no /apps/courts/key_exa
+    }
+
+    class FakeSSM:
+        def get(self, keys):
+            return {k: fake.get(k) for k in keys}
+
+    monkeypatch.setattr(config, "SSM", FakeSSM)
+    cfg = config.Config.load()
+    assert cfg.key_exa == ""
 
 
 def test_get_cfg_caches_single_load(monkeypatch):
