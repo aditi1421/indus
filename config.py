@@ -18,7 +18,12 @@ KEYS = {
     "group_jid": f"{APP}/whatsapp_group",
     "sc_search_terms": f"{APP}/sc_search_terms",
     "sc_aor_code": f"{APP}/sc_aor_code",
+    "key_exa": f"{APP}/key_exa",
 }
+
+# Keys the agent can boot without. A missing optional loads as "", and the
+# skill that needs it reports "not configured" only when actually called.
+OPTIONAL = {"key_exa"}
 
 
 @dataclass
@@ -36,17 +41,19 @@ class Config:
     group_jid: str
     sc_search_terms: str
     sc_aor_code: str
+    key_exa: str
 
     @classmethod
     def load(cls):
         ssm = SSM().get(list(KEYS.values()))
-        missing = [path for path in KEYS.values() if ssm.get(path) is None]
+        missing = [path for k, path in KEYS.items()
+                   if ssm.get(path) is None and k not in OPTIONAL]
         if missing:
             raise ValueError(
                 f"Missing/None SSM parameter(s), check they exist and the instance "
                 f"role can read them: {', '.join(sorted(missing))}"
             )
-        return cls(**{k: ssm[v] for k, v in KEYS.items()})
+        return cls(**{k: (ssm.get(v) or "") for k, v in KEYS.items()})
 
 
 _cfg = None

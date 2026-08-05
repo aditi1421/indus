@@ -449,6 +449,30 @@ def mhc_case_status_lookup(case_type: str, number: int, year: int):
     return _cite("\n".join(lines), f"meghalayahighcourt.nic.in case status, {what}")
 
 
+@skill
+def legal_research(query: str):
+    """Search legal news and judgment sites (Indian Kanoon, LiveLaw, Bar and Bench,
+    SC Observer, court sites) for judgments, orders and commentary. For research
+    questions only — cause lists, case status and billing have their own tools,
+    which are authoritative. Results are leads to read, not verified court records."""
+    import research
+    res = research.search(query)
+    if res.get("error"):
+        return f"Legal research search failed: {res['error']}"
+    rows = res.get("results") or []
+    if not rows:
+        return (f"No results on the firm's legal sources for '{query}'. "
+                f"Rephrasing with party names or the statute may help.")
+    lines = [f"{len(rows)} result(s) for '{query}':"]
+    for i, r in enumerate(rows, 1):
+        when = f" ({r['published']})" if r["published"] else ""
+        lines.append(f"\n{i}. {r['title']}{when}")
+        if r["highlight"]:
+            lines.append(f"   {r['highlight']}")
+        lines.append(f"   {r['url']}")
+    return _cite("\n".join(lines), "Exa legal web search")
+
+
 # --- billing skills (Zoho Invoice) ---
 
 
