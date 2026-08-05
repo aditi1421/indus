@@ -15,7 +15,8 @@ def _isolate_caches():
     import billing
     import casestatus
     import mhcstatus
-    cached = (billing, casestatus, mhcstatus)
+    import research
+    cached = (billing, casestatus, mhcstatus, research)
     for mod in cached:
         mod.clear_cache()
     yield
